@@ -1502,7 +1502,7 @@ Before submitting PR:
 
 📄 License
 MIT License
-Copyright (c) 2024 GoEdit Contributors
+Copyright (c) 2024 Prof. Dr. Michael Stal
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -1562,7 +1562,7 @@ Planned Features
 
 Version History
 
-v1.0.0 (2024-01) - Initial release
+v1.0.0 (2025-12) - Initial release
 Basic text editing
 Undo/redo support
 Search functionality
