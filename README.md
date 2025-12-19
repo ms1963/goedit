@@ -1,12 +1,8 @@
-GoEdit - Terminal Text Editor with AI Integration
+# GoEdit - Terminal Text Editor with AI Integration
 
 
 
 A minimal yet powerful terminal-based text editor with AI assistance
-
-
-
-
 
 Features •
 Installation •
@@ -16,7 +12,7 @@ Examples
 
 
 
-📋 Table of Contents
+## 📋 Table of Contents
 
 Features
 Prerequisites
@@ -46,12 +42,12 @@ Contributing
 License
 
 
-✨ Features
+## ✨ Features
 
 
 
 
-Core Editing
+### Core Editing
 
 🎯 Intuitive Interface - Familiar keyboard shortcuts
 📝 Full Text Editing - Insert, delete, copy, cut, paste
@@ -63,7 +59,7 @@ Core Editing
 
 
 
-Advanced Features
+### Advanced Features
 
 🤖 AI Integration - Built-in Ollama LLM support
 💾 Atomic Saves - Safe file writing
@@ -76,24 +72,20 @@ Advanced Features
 
 
 
-Performance
+### Performance
 
 ⚡ Fast - Efficient rendering and minimal memory footprint
 📄 Large Files - Handles files up to 1MB line length
 🚀 Responsive - Smooth scrolling and instant feedback
 
 
-📦 Prerequisites
+### 📦 Prerequisites
 Required
-
-
 
 
 Go 1.21+
 Download Go
 go version
-
-
 
 
 Terminal
@@ -104,14 +96,9 @@ iTerm2
 GNOME Terminal
 
 
-
-
 Git (optional)
 For cloning repository
 git --version
-
-
-
 
 
 Optional (for AI features)
@@ -120,14 +107,14 @@ Ollama - Install Ollama
 LLM Model - Any Ollama-compatible model (llama2, codellama, etc.)
 
 
-🚀 Installation
+## 🚀 Installation
 From Source
 Step 1: Clone or Download
-# Option A: Using git
+### Option A: Using git
 git clone https://github.com/yourusername/goedit.git
 cd goedit
 
-# Option B: Download ZIP and extract
+### Option B: Download ZIP and extract
 cd goedit
 
 Step 2: Initialize Go Module
@@ -149,33 +136,31 @@ chmod +x goedit
 
 
 
-
 Windows
 go build -o goedit.exe
 
 
 
 
-
 Step 4: Install (Optional)
 
-Linux/macOS Installation
+### Linux/macOS Installation
 
-# System-wide installation
+#System-wide installation
 sudo cp goedit /usr/local/bin/
 sudo chmod +x /usr/local/bin/goedit
 
-# User installation
+#User installation
 mkdir -p ~/bin
 cp goedit ~/bin/
 
-# Add to PATH (add to ~/.bashrc or ~/.zshrc)
+#Add to PATH (add to ~/.bashrc or ~/.zshrc)
 export PATH="$HOME/bin:$PATH"
 
 
 
 
-Windows Installation
+### Windows Installation
 
 
 Copy goedit.exe to a directory (e.g., C:\Program Files\GoEdit\)
@@ -189,21 +174,21 @@ Add: C:\Program Files\GoEdit\
 
 
 
-Cross-Compilation
+### Cross-Compilation
 Build for different platforms from any OS:
-# Windows (64-bit)
+#Windows (64-bit)
 GOOS=windows GOARCH=amd64 go build -o goedit-windows-amd64.exe
 
-# Linux (64-bit)
+#Linux (64-bit)
 GOOS=linux GOARCH=amd64 go build -o goedit-linux-amd64
 
-# macOS (Intel)
+#macOS (Intel)
 GOOS=darwin GOARCH=amd64 go build -o goedit-darwin-amd64
 
-# macOS (Apple Silicon - M1/M2)
+#macOS (Apple Silicon - M1/M2)
 GOOS=darwin GOARCH=arm64 go build -o goedit-darwin-arm64
 
-# Linux (ARM - Raspberry Pi)
+#Linux (ARM - Raspberry Pi)
 GOOS=linux GOARCH=arm64 go build -o goedit-linux-arm64
 
 Binary Installation
@@ -223,25 +208,25 @@ Add to PATH via System Properties → Environment Variables
 
 
 
-🎯 Quick Start
+## 🎯 Quick Start
 Basic Usage
-# Create/edit a new file
+#Create/edit a new file
 goedit myfile.txt
 
-# Edit existing file
+#Edit existing file
 goedit /path/to/file.txt
 
-# Start with empty buffer
+#Start with empty buffer
 goedit
 
 With AI Features
-# Use default Ollama settings
+#Use default Ollama settings
 goedit -model llama2 document.txt
 
-# Custom Ollama URL
+#Custom Ollama URL
 goedit -ollama http://localhost:11434 -model codellama code.py
 
-# Use different model
+#Use different model
 goedit -model mistral notes.md
 
 Command Line Options
@@ -254,20 +239,20 @@ Options:
   -help             Show help message
 
 Examples:
-# Show version
+#Show version
 goedit -version
 
-# Show help
+#Show help
 goedit -help
 
-# Edit with specific model
+#Edit with specific model
 goedit -model codellama main.go
 
-# Use remote Ollama server
+#Use remote Ollama server
 goedit -ollama http://192.168.1.100:11434 file.txt
 
 
-📖 Usage Guide
+## 📖 Usage Guide
 Basic Editing
 Creating a New File
 
@@ -276,18 +261,17 @@ Creating a New File
 
 Method 1: Specify filename
 goedit newfile.txt
-# Type your content
-# Press Ctrl+S to save
+#Type your content
+#Press Ctrl+S to save
 
 
 
 
 Method 2: Start empty
 goedit
-# Type your content
-# Press Ctrl+S
-# Enter filename when prompted
-
+#Type your content
+#Press Ctrl+S
+#Enter filename when prompted
 
 
 
@@ -320,13 +304,13 @@ If no filename, enter one when prompted
 File is saved atomically (safe from corruption)
 
 Quitting
-# Quit (warns if unsaved changes)
+#Quit (warns if unsaved changes)
 Ctrl+Q
 
-# If file is modified:
-# Press Ctrl+Q once → Warning message
-# Press Ctrl+Q again → Quit without saving
-# Or press Ctrl+S → Save, then Ctrl+Q
+#If file is modified:
+#Press Ctrl+Q once → Warning message
+#Press Ctrl+Q again → Quit without saving
+#Or press Ctrl+S → Save, then Ctrl+Q
 
 Navigation
 Basic Movement
@@ -375,7 +359,7 @@ Move down one screen
 
 
 Go to Line
-# Quick navigation to any line
+#Quick navigation to any line
 1. Press Ctrl+G
 2. Type line number (e.g., 42)
 3. Press Enter
@@ -383,7 +367,7 @@ Go to Line
 
 Example:
 Ctrl+G → 150 → Enter
-# Jumps to line 150
+#Jumps to line 150
 
 Search
 Finding Text
@@ -403,7 +387,7 @@ Features:
 
 Example:
 Ctrl+F → "TODO" → Enter
-# Finds first occurrence of "TODO" (case-insensitive)
+#Finds first occurrence of "TODO" (case-insensitive)
 
 AI Features
 Setting Up AI
@@ -411,22 +395,22 @@ Setting Up AI
 Prerequisites: Ollama must be installed and running
 
 
-Installing Ollama
+### Installing Ollama
 
 Linux:
 curl -fsSL https://ollama.com/install.sh | sh
 
 macOS:
-# Download from https://ollama.com/download
-# Or use Homebrew
+#Download from https://ollama.com/download
+#Or use Homebrew
 brew install ollama
 
 Windows:
-# Download installer from https://ollama.com/download
+#Download installer from https://ollama.com/download
 
 Pull a model:
 ollama pull llama2
-# or
+#or
 ollama pull codellama
 
 Verify:
@@ -434,7 +418,7 @@ ollama list
 
 
 
-Asking AI Questions
+### Asking AI Questions
 graph TD
     A[Press Ctrl+L] --> B[Type question]
     B --> C[Press Enter]
@@ -462,16 +446,16 @@ Press Ctrl+K
 AI response is inserted at cursor position
 
 Example AI Workflow
-# 1. Write initial code
+#1. Write initial code
 def calculate_fibonacci(n):
     # TODO: implement
     pass
 
-# 2. Press Ctrl+L
-# 3. Ask: "Write a fibonacci function in Python"
-# 4. Press Enter (wait for response)
-# 5. Position cursor after TODO line
-# 6. Press Ctrl+K to insert AI-generated code
+#2. Press Ctrl+L
+#3. Ask: "Write a fibonacci function in Python"
+#4. Press Enter (wait for response)
+#5. Position cursor after TODO line
+#6. Press Ctrl+K to insert AI-generated code
 
 Good AI Prompts:
 ✅ Specific and clear:
@@ -487,23 +471,23 @@ Good AI Prompts:
 "Fix this"
 "Code"
 
-Clipboard Operations
+### Clipboard Operations
 
 Note: Clipboard is internal to GoEdit (not system clipboard)
 
 Copy
-# Copy current line
+#Copy current line
 Ctrl+C
 
-# Copy all text
+#Copy all text
 Ctrl+A
 
 Cut
-# Cut current line (delete and copy)
+#Cut current line (delete and copy)
 Ctrl+X
 
 Paste
-# Paste clipboard content at cursor
+#Paste clipboard content at cursor
 Ctrl+V
 
 Example Workflow:
@@ -527,7 +511,7 @@ Example:
 3. Ctrl+Y → "Hello World" reappears
 
 
-⌨️ Keyboard Shortcuts
+### ⌨️ Keyboard Shortcuts
 Complete Reference
 
 
@@ -671,7 +655,7 @@ Cancel current input mode
 
 
 
-Quick Reference Card
+### Quick Reference Card
 ┌─────────────────────────────────────────────────────────────┐
 │                    GoEdit Quick Reference                    │
 ├─────────────────────────────────────────────────────────────┤
@@ -683,20 +667,20 @@ Quick Reference Card
 └─────────────────────────────────────────────────────────────┘
 
 
-⚙️ Configuration
+## ⚙️ Configuration
 Command Line Options
-# Default configuration
+#Default configuration
 goedit myfile.txt
 
-# Custom Ollama URL (different host/port)
+#Custom Ollama URL (different host/port)
 goedit -ollama http://192.168.1.100:11434 myfile.txt
 
-# Use specific model
+#Use specific model
 goedit -model codellama script.py
 goedit -model mistral document.md
 goedit -model llama2:13b large-project.txt
 
-# Combine options
+#Combine options
 goedit -ollama http://localhost:11434 -model codellama main.go
 
 Shell Aliases
@@ -705,16 +689,16 @@ Create convenient aliases in your shell configuration:
 Bash/Zsh Configuration
 
 Add to ~/.bashrc or ~/.zshrc:
-# Alias for coding
+#Alias for coding
 alias goedit-code='goedit -model codellama'
 
-# Alias for writing
+#Alias for writing
 alias goedit-write='goedit -model llama2'
 
-# Alias with custom Ollama
+#Alias with custom Ollama
 alias goedit-remote='goedit -ollama http://remote-server:11434'
 
-# Quick edit
+#Quick edit
 alias ge='goedit'
 
 Then reload:
@@ -723,10 +707,10 @@ source ~/.bashrc  # or ~/.zshrc
 
 
 
-PowerShell Configuration
+## PowerShell Configuration
 
 Add to PowerShell profile ($PROFILE):
-# Create aliases
+#Create aliases
 function GoEdit-Code { goedit -model codellama $args }
 function GoEdit-Write { goedit -model llama2 $args }
 
@@ -736,15 +720,15 @@ Set-Alias -Name ge -Value goedit
 
 Environment Variables
 You can set default values:
-# Add to ~/.bashrc or ~/.zshrc
+#Add to ~/.bashrc or ~/.zshrc
 export GOEDIT_OLLAMA_URL="http://localhost:11434"
 export GOEDIT_MODEL="llama2"
 
-# Then use in scripts
+#Then use in scripts
 goedit -ollama $GOEDIT_OLLAMA_URL -model $GOEDIT_MODEL file.txt
 
 
-🤖 AI Integration Setup
+## 🤖 AI Integration Setup
 Installing Ollama
 
 
@@ -757,10 +741,10 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 
 macOS
-# Download from
-# ollama.com/download
+#Download from
+#ollama.com/download
 
-# Or Homebrew
+#Or Homebrew
 brew install ollama
 
 
@@ -774,23 +758,23 @@ ollama.com/download
 
 
 Installing Models
-# General purpose
+General purpose
 ollama pull llama2
 
-# Coding assistant
+Coding assistant
 ollama pull codellama
 
-# Lightweight and fast
+Lightweight and fast
 ollama pull mistral
 
-# Larger, more capable
+Larger, more capable
 ollama pull llama2:13b
 ollama pull llama2:70b
 
-# List installed models
+List installed models
 ollama list
 
-# Remove a model
+Remove a model
 ollama rm modelname
 
 Model Comparison
@@ -834,35 +818,35 @@ Highest quality responses
 Slow
 
 
-Starting Ollama
-# Ollama usually starts automatically after installation
+### Starting Ollama
+#Ollama usually starts automatically after installation
 
-# To manually start:
+#To manually start:
 ollama serve
 
-# Check if running:
+#Check if running:
 curl http://localhost:11434/api/tags
 
-# Should return list of models
+#Should return list of models
 
 Using Different Models
-# For code editing
+#For code editing
 goedit -model codellama main.go
 
-# For documentation
+#For documentation
 goedit -model llama2 README.md
 
-# For creative writing
+#For creative writing
 goedit -model mistral story.txt
 
-# For complex tasks
+#For complex tasks
 goedit -model llama2:13b analysis.txt
 
 Remote Ollama Server
-# If Ollama is on another machine
+#If Ollama is on another machine
 goedit -ollama http://192.168.1.100:11434 -model llama2 file.txt
 
-# Using custom port
+#Using custom port
 goedit -ollama http://localhost:8080 -model codellama code.py
 
 # With authentication (if configured)
@@ -872,7 +856,7 @@ goedit -ollama https://ollama.example.com -model llama2 file.txt
 
 💡 Examples
 Example 1: Quick Note Taking
-# Start editor
+#Start editor
 goedit notes.txt
 
 Meeting Notes - 2024-01-15
@@ -895,24 +879,24 @@ Action Items:
 
 Next Meeting: 2024-01-22
 
-# Save: Ctrl+S
-# Quit: Ctrl+Q
+#Save: Ctrl+S
+#Quit: Ctrl+Q
 
 Example 2: Code Editing with AI
-# Open Python file with code model
+#Open Python file with code model
 goedit -model codellama script.py
 
-# Write initial code
+#Write initial code
 def process_data(data):
     # TODO: implement data processing
     pass
 
-# Ask AI for help
-# Ctrl+L → "Write a function to process a list of dictionaries and extract email addresses"
-# Press Enter, wait for response
-# Position cursor, press Ctrl+K to insert
+#Ask AI for help
+#Ctrl+L → "Write a function to process a list of dictionaries and extract email addresses"
+#Press Enter, wait for response
+#Position cursor, press Ctrl+K to insert
 
-# Result after AI insertion:
+#Result after AI insertion:
 def process_data(data):
     """
     Extract email addresses from a list of dictionaries.
@@ -929,25 +913,25 @@ def process_data(data):
             emails.append(item['email'])
     return emails
 
-# Save: Ctrl+S
+#Save: Ctrl+S
 
 Example 3: Editing Configuration Files
-# Edit system config
+#Edit system config
 goedit /etc/myapp/config.yaml
 
-# Use Ctrl+F to find specific settings
-# Ctrl+F → "database" → Enter
+#Use Ctrl+F to find specific settings
+#Ctrl+F → "database" → Enter
 
 database:
   host: localhost
   port: 5432
   name: myapp_db
   
-# Make changes
-# Save: Ctrl+S
+#Make changes
+#Save: Ctrl+S
 
 Example 4: Multi-file Editing Session
-# Create a script to edit multiple files
+#Create a script to edit multiple files
 #!/bin/bash
 
 files=("config.txt" "data.csv" "notes.md")
@@ -958,16 +942,16 @@ for file in "${files[@]}"; do
 done
 
 Example 5: Using as Git Commit Editor
-# Set GoEdit as git editor
+#Set GoEdit as git editor
 git config --global core.editor "goedit"
 
-# Or for single session
+#Or for single session
 export GIT_EDITOR="goedit"
 
-# Now git commit will open GoEdit
+#Now git commit will open GoEdit
 git commit
 
-# Write commit message in GoEdit
+#Write commit message in GoEdit
 feat: Add user authentication
 
 - Implement JWT token generation
@@ -976,21 +960,21 @@ feat: Add user authentication
 
 Closes #42
 
-# Save: Ctrl+S
-# Quit: Ctrl+Q
-# Git commit completes
+#Save: Ctrl+S
+#Quit: Ctrl+Q
+#Git commit completes
 
 Example 6: Searching Large Log Files
-# Open large log file
+#Open large log file
 goedit application.log
 
-# Search for errors
+#Search for errors
 Ctrl+F → "ERROR" → Enter
 
-# Jump to specific line
+#Jump to specific line
 Ctrl+G → 1500 → Enter
 
-# Navigate through file
+#Navigate through file
 Page Down (scroll)
 Ctrl+End (go to end)
 Ctrl+Home (go to beginning)
@@ -1019,14 +1003,14 @@ goedit -model llama2 README.md
 Example 8: Code Refactoring
 goedit -model codellama legacy_code.py
 
-# Original messy code
+#Original messy code
 def calc(x,y,z):
     return x+y*z-x/y
 
-# Ask AI: "Refactor this function with proper naming and documentation"
-# Ctrl+L → Enter → Ctrl+K
+#Ask AI: "Refactor this function with proper naming and documentation"
+#Ctrl+L → Enter → Ctrl+K
 
-# Result:
+#Result:
 def calculate_expression(x: float, y: float, z: float) -> float:
     """
     Calculate the expression: x + (y * z) - (x / y)
@@ -1059,18 +1043,18 @@ Common Issues and Solutions
 
 Problem: Terminal doesn't support required features
 Solutions:
-# Set proper TERM variable
+#Set proper TERM variable
 export TERM=xterm-256color
 
-# Or try
+#Or try
 export TERM=screen-256color
 
-# On Windows, use Windows Terminal or PowerShell
-# Avoid old CMD.exe
+#On Windows, use Windows Terminal or PowerShell
+#Avoid old CMD.exe
 
 Verify terminal:
 echo $TERM
-# Should show: xterm-256color or similar
+#Should show: xterm-256color or similar
 
 
 
@@ -1079,19 +1063,19 @@ echo $TERM
 
 Problem: Ollama is not running or wrong URL
 Solutions:
-# 1. Check if Ollama is running
+#1. Check if Ollama is running
 curl http://localhost:11434/api/tags
 
-# 2. Start Ollama if not running
+#2. Start Ollama if not running
 ollama serve
 
-# 3. Check firewall settings
+#3. Check firewall settings
 # Ensure port 11434 is not blocked
 
-# 4. Verify URL and port
+#4. Verify URL and port
 goedit -ollama http://localhost:11434 file.txt
 
-# 5. Check Ollama logs
+#5. Check Ollama logs
 ollama logs
 
 Test Ollama directly:
@@ -1108,18 +1092,18 @@ curl http://localhost:11434/api/generate -d '{
 
 Problem: Requested model not installed
 Solutions:
-# 1. List installed models
+#1. List installed models
 ollama list
 
-# 2. Pull the model
+#2. Pull the model
 ollama pull llama2
 
-# 3. Use installed model
+#3. Use installed model
 goedit -model llama2 file.txt
 
-# 4. Check model name spelling
-# Correct: llama2, codellama, mistral
-# Incorrect: llama-2, code-llama
+#4. Check model name spelling
+#Correct: llama2, codellama, mistral
+#Incorrect: llama-2, code-llama
 
 
 
@@ -1143,16 +1127,16 @@ echo "Columns: $COLUMNS, Rows: $LINES"
 
 Problem: Encoding issues
 Solutions:
-# Set UTF-8 encoding
+#Set UTF-8 encoding
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 
-# On Windows, ensure terminal supports UTF-8
-# Use Windows Terminal (recommended)
+#On Windows, ensure terminal supports UTF-8
+#Use Windows Terminal (recommended)
 
 Verify encoding:
 locale
-# Should show UTF-8 encoding
+#Should show UTF-8 encoding
 
 
 
@@ -1161,21 +1145,21 @@ locale
 
 Problem: Permission denied or directory doesn't exist
 Solutions:
-# 1. Check permissions
+#1. Check permissions
 ls -la /path/to/file
 
-# 2. Create directory if needed
+#2. Create directory if needed
 mkdir -p /path/to/directory
 
-# 3. Check write permissions
+#3. Check write permissions
 touch /path/to/test.txt
 rm /path/to/test.txt
 
-# 4. Use correct path
-# Absolute: /home/user/file.txt
-# Relative: ./file.txt
+#4. Use correct path
+#Absolute: /home/user/file.txt
+#Relative: ./file.txt
 
-# 5. For system files, use sudo (not recommended for regular editing)
+#5. For system files, use sudo (not recommended for regular editing)
 sudo goedit /etc/config
 
 
@@ -1185,20 +1169,20 @@ sudo goedit /etc/config
 
 Problem: Model is large or system is slow
 Solutions:
-# 1. Use smaller, faster model
+#1. Use smaller, faster model
 goedit -model mistral file.txt
 
-# 2. Use quantized model (smaller, faster)
+#2. Use quantized model (smaller, faster)
 ollama pull llama2:7b-q4_0
 goedit -model llama2:7b-q4_0 file.txt
 
-# 3. Check system resources
-# Ensure enough RAM (8GB+ recommended for 7B models)
+#3. Check system resources
+#Ensure enough RAM (8GB+ recommended for 7B models)
 
-# 4. Close other applications
+#4. Close other applications
 
-# 5. Use GPU if available
-# Ollama automatically uses GPU when available
+#5. Use GPU if available
+#Ollama automatically uses GPU when available
 
 Model performance comparison:
 
@@ -1214,30 +1198,30 @@ llama2:70b - Slow (requires powerful hardware)
 
 Problem: Compilation fails
 Solutions:
-# 1. Ensure Go version is 1.21+
+#1. Ensure Go version is 1.21+
 go version
 
-# 2. Clean and rebuild
+# 2.Clean and rebuild
 go clean
 rm go.sum
 go mod tidy
 go build
 
-# 3. Update dependencies
+# 3.Update dependencies
 go get -u ./...
 go mod tidy
 
-# 4. Check for syntax errors
+#4. Check for syntax errors
 go fmt ./...
 go vet ./...
 
-# 5. Verify all files are present
-# Required: main.go, buffer.go, cursor.go, ollama.go, go.mod
+#5. Verify all files are present
+#Required: main.go, buffer.go, cursor.go, ollama.go, go.mod
 
 
 
 Debug Mode
-# Test Ollama connection
+#Test Ollama connection
 curl -X POST http://localhost:11434/api/generate \
   -H "Content-Type: application/json" \
   -d '{
@@ -1246,26 +1230,26 @@ curl -X POST http://localhost:11434/api/generate \
     "stream": false
   }'
 
-# Check Ollama logs
+#Check Ollama logs
 ollama logs
 
-# Verify Go installation
+#Verify Go installation
 go env
 
-# Test terminal capabilities
+#Test terminal capabilities
 tput colors  # Should show 256 or more
 
 Getting Help
-# Show help
+#Show help
 goedit -help
 
-# Show version
+#Show version
 goedit -version
 
-# Check Go version
+#Check Go version
 go version
 
-# Check Ollama status
+#Check Ollama status
 ollama list
 
 Performance Tips
@@ -1295,65 +1279,65 @@ Close unnecessary applications
 
 🛠️ Building from Source
 Development Setup
-# Clone repository
+#Clone repository
 git clone https://github.com/yourusername/goedit.git
 cd goedit
 
-# Install dependencies
+#Install dependencies
 go mod download
 
-# Run without building
+#Run without building
 go run . test.txt
 
-# Build for development
+#Build for development
 go build -o goedit
 
-# Build with debug info
+#Build with debug info
 go build -gcflags="all=-N -l" -o goedit-debug
 
 Build Optimizations
-# Optimized build (smaller binary)
+#Optimized build (smaller binary)
 go build -ldflags="-s -w" -o goedit
 
-# With version info
+#With version info
 VERSION="1.0.0"
 go build -ldflags="-X main.version=$VERSION -s -w" -o goedit
 
-# Static binary (Linux - no external dependencies)
+#Static binary (Linux - no external dependencies)
 CGO_ENABLED=0 go build -ldflags="-s -w" -o goedit
 
-# Verify binary size
+#Verify binary size
 ls -lh goedit
 
 Testing
-# Run tests (if implemented)
+#Run tests (if implemented)
 go test ./...
 
-# Verbose output
+#Verbose output
 go test -v ./...
 
-# Test specific package
+#Test specific package
 go test -v ./buffer
 
-# Run benchmarks
+#Run benchmarks
 go test -bench=. ./...
 
-# Test coverage
+#Test coverage
 go test -cover ./...
 go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 
 Code Quality
-# Format code
+#Format code
 go fmt ./...
 
-# Lint code
+#Lint code
 go vet ./...
 
-# Static analysis (install golangci-lint first)
+#Static analysis (install golangci-lint first)
 golangci-lint run
 
-# Check for common mistakes
+#Check for common mistakes
 staticcheck ./...
 
 Project Structure
@@ -1425,7 +1409,7 @@ Ways to Contribute
 Development Process
 
 Fork the repository
-# Click "Fork" on GitHub
+#Click "Fork" on GitHub
 git clone https://github.com/YOUR_USERNAME/goedit.git
 cd goedit
 
@@ -1435,8 +1419,8 @@ git checkout -b feature/amazing-feature
 
 
 Make your changes
-# Edit files
-# Test thoroughly
+#Edit files
+#Test thoroughly
 go test ./...
 go build
 
@@ -1480,13 +1464,13 @@ Development Guidelines
 ✅ Add tests for new features
 
 Code Style
-# Format code
+#Format code
 go fmt ./...
 
-# Check for issues
+#Check for issues
 go vet ./...
 
-# Run linter
+#Run linter
 golangci-lint run
 
 Testing Checklist
