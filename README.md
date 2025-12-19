@@ -14,32 +14,36 @@ Examples
 
 ## 📋 Table of Contents
 
-Features
-Prerequisites
-Installation
-From Source
-Cross-Compilation
-Binary Installation
+- Features
+- Prerequisites
+- Installation
+- From Source
+- Cross-Compilation
+- Binary Installation
 
 
 Quick Start
-Usage Guide
-Basic Editing
-File Operations
-Navigation
-Search
-AI Features
-Clipboard Operations
+
+
+- Usage Guide
+- Basic Editing
+- File Operations
+- Navigation
+- Search
+- AI Features
+- Clipboard Operations
 
 
 Keyboard Shortcuts
-Configuration
-AI Integration Setup
-Examples
-Troubleshooting
-Building from Source
-Contributing
-License
+
+
+- Configuration
+- AI Integration Setup
+- Examples
+- Troubleshooting
+- Building from Source
+- Contributing
+- License
 
 
 ## ✨ Features
@@ -49,24 +53,24 @@ License
 
 ### Core Editing
 
-🎯 Intuitive Interface - Familiar keyboard shortcuts
-📝 Full Text Editing - Insert, delete, copy, cut, paste
-↩️ Undo/Redo - 50 levels of history
-🔍 Search - Case-insensitive with wraparound
-📍 Go to Line - Quick navigation
-📋 Clipboard - Internal copy/paste support
+- 🎯 Intuitive Interface - Familiar keyboard shortcuts
+- 📝 Full Text Editing - Insert, delete, copy, cut, paste
+- ↩️ Undo/Redo - 50 levels of history
+- 🔍 Search - Case-insensitive with wraparound
+- 📍 Go to Line - Quick navigation
+- 📋 Clipboard - Internal copy/paste support
 
 
 
 
 ### Advanced Features
 
-🤖 AI Integration - Built-in Ollama LLM support
-💾 Atomic Saves - Safe file writing
-🌐 Cross-Platform - Windows, Linux, macOS
-📏 Status Bar - Real-time file info
-🎨 Smart Indentation - 4-space tabs
-🔒 Quit Protection - Unsaved change warnings
+- 🤖 AI Integration - Built-in Ollama LLM support
+- 💾 Atomic Saves - Safe file writing
+- 🌐 Cross-Platform - Windows, Linux, macOS
+- 📏 Status Bar - Real-time file info
+- 🎨 Smart Indentation - 4-space tabs
+- 🔒 Quit Protection - Unsaved change warnings
 
 
 
@@ -74,9 +78,9 @@ License
 
 ### Performance
 
-⚡ Fast - Efficient rendering and minimal memory footprint
-📄 Large Files - Handles files up to 1MB line length
-🚀 Responsive - Smooth scrolling and instant feedback
+- ⚡ Fast - Efficient rendering and minimal memory footprint
+- 📄 Large Files - Handles files up to 1MB line length
+- 🚀 Responsive - Smooth scrolling and instant feedback
 
 
 ### 📦 Prerequisites
@@ -1355,6 +1359,8 @@ staticcheck ./...
 
 
 Project Structure
+
+´´´
 goedit/
 ├── main.go          # Main entry point and editor logic
 ├── buffer.go        # Text buffer management
@@ -1367,7 +1373,7 @@ goedit/
 └── .gitignore       # Git ignore rules
 
 File Descriptions
-
+´´´
 
 
 File
