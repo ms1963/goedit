@@ -849,8 +849,8 @@ goedit -ollama http://192.168.1.100:11434 -model llama2 file.txt
 #Using custom port
 goedit -ollama http://localhost:8080 -model codellama code.py
 
-# With authentication (if configured)
-# Set up reverse proxy with auth
+#With authentication (if configured)
+#Set up reverse proxy with auth
 goedit -ollama https://ollama.example.com -model llama2 file.txt
 
 
@@ -1059,23 +1059,23 @@ echo $TERM
 
 
 
-❌ "Failed to connect to Ollama"
+### ❌ "Failed to connect to Ollama"
 
 Problem: Ollama is not running or wrong URL
 Solutions:
-#1. Check if Ollama is running
+#### 1. Check if Ollama is running
 curl http://localhost:11434/api/tags
 
-#2. Start Ollama if not running
+#### 2. Start Ollama if not running
 ollama serve
 
-#3. Check firewall settings
+#### 3. Check firewall settings
 # Ensure port 11434 is not blocked
 
-#4. Verify URL and port
+#### 4. Verify URL and port
 goedit -ollama http://localhost:11434 file.txt
 
-#5. Check Ollama logs
+####5. Check Ollama logs
 ollama logs
 
 Test Ollama directly:
@@ -1088,27 +1088,27 @@ curl http://localhost:11434/api/generate -d '{
 
 
 
-❌ "Model not found"
+### ❌ "Model not found"
 
 Problem: Requested model not installed
 Solutions:
-#1. List installed models
+#### 1. List installed models
 ollama list
 
-#2. Pull the model
+#### 2. Pull the model
 ollama pull llama2
 
-#3. Use installed model
+#### 3. Use installed model
 goedit -model llama2 file.txt
 
-#4. Check model name spelling
+#### 4. Check model name spelling
 #Correct: llama2, codellama, mistral
 #Incorrect: llama-2, code-llama
 
 
 
 
-❌ Terminal too small
+### ❌ Terminal too small
 
 Problem: Terminal window is too small
 Solutions:
@@ -1123,7 +1123,7 @@ echo "Columns: $COLUMNS, Rows: $LINES"
 
 
 
-❌ Characters not displaying correctly
+### ❌ Characters not displaying correctly
 
 Problem: Encoding issues
 Solutions:
@@ -1141,73 +1141,74 @@ locale
 
 
 
-❌ Can't save file
+### ❌ Can't save file
 
 Problem: Permission denied or directory doesn't exist
 Solutions:
-#1. Check permissions
+#### 1. Check permissions
 ls -la /path/to/file
 
-#2. Create directory if needed
+#### 2. Create directory if needed
 mkdir -p /path/to/directory
 
-#3. Check write permissions
+#### 3. Check write permissions
 touch /path/to/test.txt
 rm /path/to/test.txt
 
-#4. Use correct path
+#### 4. Use correct path
 #Absolute: /home/user/file.txt
 #Relative: ./file.txt
 
-#5. For system files, use sudo (not recommended for regular editing)
+#### 5. For system files, use sudo (not recommended for regular editing)
 sudo goedit /etc/config
 
 
 
 
-❌ Slow AI responses
+### ❌ Slow AI responses
 
 Problem: Model is large or system is slow
 Solutions:
-#1. Use smaller, faster model
+#### 1. Use smaller, faster model
 goedit -model mistral file.txt
 
-#2. Use quantized model (smaller, faster)
+#### 2. Use quantized model (smaller, faster)
 ollama pull llama2:7b-q4_0
 goedit -model llama2:7b-q4_0 file.txt
 
-#3. Check system resources
+#### 3. Check system resources
 #Ensure enough RAM (8GB+ recommended for 7B models)
 
-#4. Close other applications
+#### 4. Close other applications
 
-#5. Use GPU if available
+####5. Use GPU if available
 #Ollama automatically uses GPU when available
 
 Model performance comparison:
 
-mistral - Fastest
-llama2 - Fast
-llama2:13b - Medium
-llama2:70b - Slow (requires powerful hardware)
+- mistral - Fastest
+- llama2 - Fast
+- llama2:13b - Medium
+- llama2:70b - Slow (requires powerful hardware)
 
 
 
 
-❌ Build errors
+### ❌ Build errors
 
 Problem: Compilation fails
+
 Solutions:
-#1. Ensure Go version is 1.21+
+#### 1. Ensure Go version is 1.21+
 go version
 
-# 2.Clean and rebuild
+#### 2.Clean and rebuild
 go clean
 rm go.sum
 go mod tidy
 go build
 
-# 3.Update dependencies
+#### 3.Update dependencies
 go get -u ./...
 go mod tidy
 
@@ -1220,7 +1221,7 @@ go vet ./...
 
 
 
-Debug Mode
+### Debug Mode
 #Test Ollama connection
 curl -X POST http://localhost:11434/api/generate \
   -H "Content-Type: application/json" \
@@ -1252,7 +1253,7 @@ go version
 #Check Ollama status
 ollama list
 
-Performance Tips
+### Performance Tips
 
 For large files:
 
@@ -1283,28 +1284,36 @@ Development Setup
 git clone https://github.com/yourusername/goedit.git
 cd goedit
 
+
 #Install dependencies
 go mod download
+
 
 #Run without building
 go run . test.txt
 
+
 #Build for development
 go build -o goedit
 
+
 #Build with debug info
 go build -gcflags="all=-N -l" -o goedit-debug
+
 
 Build Optimizations
 #Optimized build (smaller binary)
 go build -ldflags="-s -w" -o goedit
 
+
 #With version info
 VERSION="1.0.0"
 go build -ldflags="-X main.version=$VERSION -s -w" -o goedit
 
+
 #Static binary (Linux - no external dependencies)
 CGO_ENABLED=0 go build -ldflags="-s -w" -o goedit
+
 
 #Verify binary size
 ls -lh goedit
@@ -1327,18 +1336,23 @@ go test -cover ./...
 go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 
-Code Quality
+### Code Quality
+
 #Format code
 go fmt ./...
+
 
 #Lint code
 go vet ./...
 
+
 #Static analysis (install golangci-lint first)
 golangci-lint run
 
+
 #Check for common mistakes
 staticcheck ./...
+
 
 Project Structure
 goedit/
@@ -1416,7 +1430,7 @@ Ways to Contribute
 
 ⭐ Star the repo - Show your support
 
-Development Process
+### Development Process
 
 Fork the repository
 #Click "Fork" on GitHub
@@ -1439,22 +1453,22 @@ Commit your changes
 git add .
 git commit -m "feat: Add amazing feature"
 
-Commit message format:
+#### Commit message format:
 
-feat: New feature
-fix: Bug fix
-docs: Documentation
-style: Formatting
-refactor: Code restructuring
-test: Tests
-chore: Maintenance
+- feat: New feature
+- fix: Bug fix
+- docs: Documentation
+- style: Formatting
+- refactor: Code restructuring
+- test: Tests
+- chore: Maintenance
 
 
-Push to your fork
+#### Push to your fork
 git push origin feature/amazing-feature
 
 
-Open a Pull Request
+#### Open a Pull Request
 
 Go to GitHub
 Click "New Pull Request"
@@ -1463,18 +1477,18 @@ Link related issues
 
 
 
-Development Guidelines
+### Development Guidelines
 
-✅ Follow Go best practices
-
-
-✅ Add comments for complex logic
+- Follow Go best practices
 
 
-✅ Test on Windows, Linux, and macOS
+- Add comments for complex logic
 
 
-✅ Update README for new features
+- Test on Windows, Linux, and macOS
+
+
+- Update README for new features
 
 
 ✅ Keep dependencies minimal
@@ -1508,7 +1522,7 @@ Before submitting PR:
  Commit messages are clear
 
 
-📄 License
+### 📄 License
 MIT License
 Copyright (c) 2024 Prof. Dr. Michael Stal
 Permission is hereby granted, free of charge, to any person obtaining a copy
