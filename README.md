@@ -1401,9 +1401,19 @@ We welcome contributions! Here's how you can help:
 Ways to Contribute
 
 🐛 Report bugs - Open an issue with details
+
+
+
+
 💡 Suggest features - Share your ideas
+
+
 📖 Improve docs - Fix typos, add examples
+
+
 🔧 Submit PRs - Fix bugs or add features
+
+
 ⭐ Star the repo - Show your support
 
 Development Process
@@ -1456,12 +1466,26 @@ Link related issues
 Development Guidelines
 
 ✅ Follow Go best practices
+
+
 ✅ Add comments for complex logic
+
+
 ✅ Test on Windows, Linux, and macOS
+
+
 ✅ Update README for new features
+
+
 ✅ Keep dependencies minimal
+
+
 ✅ Write clear commit messages
+
+
 ✅ Add tests for new features
+
+
 
 Code Style
 #Format code
@@ -1506,23 +1530,41 @@ SOFTWARE.
 🙏 Acknowledgments
 
 tcell - Excellent terminal handling library
+
+
 Ollama - Making local LLMs accessible
+
+
 Inspired by: nano, vim, emacs, and modern editors
+
+
 Community: All contributors and users
+
 
 
 📞 Support
 Get Help
 
 📚 Documentation: This README
-🐛 Bug Reports: GitHub Issues
-💬 Discussions: GitHub Discussions
-📧 Email: your.email@example.com
 
-Useful Links
+
+🐛 Bug Reports: GitHub Issues
+
+
+💬 Discussions: GitHub Discussions
+
+
+📧 Email: michael.stal@gmail.com
+
+
+### Useful Links
 
 Go Documentation
+
+
 Ollama Documentation
+
+
 tcell Documentation
 
 
@@ -1530,28 +1572,65 @@ tcell Documentation
 Planned Features
 
  Syntax highlighting - Language-specific coloring
+
+ 
  Multiple file tabs - Edit multiple files simultaneously
+
+ 
  System clipboard - Integration with OS clipboard
+
+ 
  Mouse support - Click to position cursor
+
+ 
  Configuration file - Persistent settings
+
+ 
  Plugin system - Extensibility
+
+ 
  Line numbers - Optional line number display
+
+ 
  Code folding - Collapse/expand code blocks
+
+ 
  Git integration - Show git status, diff
+
+ 
  Themes - Customizable color schemes
+
+ 
  Auto-completion - Context-aware suggestions
+
+ 
  Bracket matching - Highlight matching brackets
+
+ 
  Multiple cursors - Edit multiple locations
+
+ 
  Regex search - Advanced search patterns
+ 
 
 Version History
 
-v1.0.0 (2025-12) - Initial release
-Basic text editing
-Undo/redo support
-Search functionality
-Ollama integration
-Cross-platform support
+- v1.0.0 (2025-12) - Initial release
+
+  
+- Basic text editing
+
+
+- Undo/redo support
+
+
+- Search functionality
+
+
+- Ollama integration
+
+
+- Cross-platform support
 
 
 
@@ -1559,6 +1638,9 @@ Cross-platform support
 
 
 Made with ❤️ by the GoEdit Team
+
+
+
 Happy Editing! 🚀
 
 
