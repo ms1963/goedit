@@ -35,7 +35,7 @@ GoEdit is a powerful, lightweight terminal-based text editor written in Go, feat
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/goedit.git
+git clone https://github.com/ms1963/goedit.git
 cd goedit
 
 # Initialize Go module
