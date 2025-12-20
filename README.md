@@ -115,7 +115,7 @@ LLM Model - Any Ollama-compatible model (llama2, codellama, etc.)
 From Source
 Step 1: Clone or Download
 ### Option A: Using git
-git clone https://github.com/yourusername/goedit.git
+git clone https://github.com/ms1963/goedit.git
 cd goedit
 
 ### Option B: Download ZIP and extract
@@ -668,7 +668,7 @@ Cancel current input mode
 
 ### Quick Reference Card
 ┌─────────────────────────────────────────────────────────────┐
-│                    GoEdit Quick Reference                    │
+│                    GoEdit Quick Reference                   │
 ├─────────────────────────────────────────────────────────────┤
 │ File:  Ctrl+S Save  │  Ctrl+Q Quit                          │
 │ Edit:  Ctrl+Z Undo  │  Ctrl+Y Redo                          │
@@ -1323,7 +1323,7 @@ For slow terminals:
 🛠️ Building from Source
 Development Setup
 #Clone repository
-git clone https://github.com/yourusername/goedit.git
+git clone https://github.com/ms1963/goedit.git
 cd goedit
 
 
@@ -1478,7 +1478,7 @@ Ways to Contribute
 
 Fork the repository
 #Click "Fork" on GitHub
-git clone https://github.com/YOUR_USERNAME/goedit.git
+git clone https://github.com/ms1963/goedit.git
 cd goedit
 
 
@@ -1568,7 +1568,7 @@ Before submitting PR:
 
 ### 📄 License
 MIT License
-Copyright (c) 2024 Prof. Dr. Michael Stal
+Copyright (c) 2025 Prof. Dr. Michael Stal
 
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
