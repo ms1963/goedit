@@ -51,7 +51,7 @@ go build -o goedit
 sudo mv goedit /usr/local/bin/
 
 Quick Install (One-liner)
-git clone https://github.com/yourusername/goedit.git &amp;&amp; cd goedit &amp;&amp; go mod init goedit &amp;&amp; go get github.com/gdamore/tcell/v2 &amp;&amp; go build -o goedit
+git clone https://github.com/ms1963/goedit.git &amp;&amp; cd goedit &amp;&amp; go mod init goedit &amp;&amp; go get github.com/gdamore/tcell/v2 &amp;&amp; go build -o goedit
 
 
 🎮 Usage
