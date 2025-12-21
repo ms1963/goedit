@@ -1,0 +1,2482 @@
+================================================================================
+                    UPGRADING GOEDIT: FROM VERSION 1 TO VERSION 2
+                         A COMPREHENSIVE DEVELOPER'S GUIDE
+================================================================================
+                Copyright (C) Prof. Dr. Michael Stal, 2025
+                          All Rights Reserved
+
+================================================================================
+TABLE OF CONTENTS
+
+Introduction and Overview
+Architecture Changes and Design Decisions
+Adding Multi-Tab Support
+Implementing System Clipboard Integration
+Integrating AI Assistance with Ollama
+Adding Streaming AI Responses
+Enhancing the User Interface
+Improving Error Handling and Thread Safety
+Performance Optimizations
+Testing and Validation
+Conclusion and Future Enhancements
+
+================================================================================
+
+INTRODUCTION AND OVERVIEW
+
+
+The journey from GoEdit Version 1 to Version 2 represents a significant 
+evolution in the editor's capabilities. Version 1 provided basic text editing 
+functionality with a simple, single-file interface. Version 2 transforms the 
+editor into a modern, feature-rich development tool with multi-file support, 
+AI integration, and advanced clipboard operations.
+This tutorial will guide you through each major enhancement, explaining the 
+design decisions, implementation details, and code changes required to upgrade 
+from Version 1 to Version 2. Each section includes detailed code snippets with 
+comprehensive explanations to help you understand not just what changed, but 
+why and how.
+
+Key Enhancements in Version 2
+
+The second version introduces several major features that fundamentally change 
+how the editor operates. First, we added multi-tab support, allowing users to 
+work with multiple files simultaneously. This required a complete restructuring 
+of how the editor manages buffers and cursor positions.
+Second, we integrated system clipboard support across all major operating 
+systems including macOS, Linux, and Windows. This enhancement allows users to 
+seamlessly copy and paste content between GoEdit and other applications on 
+their system.
+
+Third, we added AI assistance through Ollama integration, enabling users to 
+get code suggestions, explanations, and automated text generation directly 
+within the editor. This feature includes both standard and streaming response 
+modes for different use cases.
+Fourth, we significantly improved the user interface with a visual tab bar, 
+enhanced status messages, and better visual feedback for ongoing operations.
+Finally, we implemented comprehensive error handling, thread safety mechanisms, 
+and performance optimizations to ensure the editor remains responsive even 
+under heavy load.
+
+Target Audience
+This tutorial is designed for developers who have a working knowledge of the 
+Go programming language and are familiar with terminal-based applications. You 
+should understand basic concepts like goroutines, channels, and the tcell 
+library that GoEdit uses for terminal manipulation.
+If you have worked with Version 1 of GoEdit or similar text editors, you will 
+find the upgrade path straightforward. However, even if you are new to the 
+project, this tutorial provides enough context and explanation to understand 
+each enhancement independently.
+Prerequisites
+
+Before beginning the upgrade process, you should have the following tools and 
+knowledge in place. First, ensure you have Go version 1.18 or later installed 
+on your system. The code uses features that are only available in recent Go 
+versions, particularly around generics and improved error handling.
+Second, you need the tcell library version 2, which provides the terminal 
+interface capabilities. You can install this using the command "go get 
+github.com/gdamore/tcell/v2" in your project directory.
+
+Third, if you plan to use the AI features, you should have Ollama installed 
+and running on your system. While this is optional for the basic editor 
+functionality, it is essential for testing the AI integration features.
+Fourth, you should have a basic understanding of concurrent programming in Go, 
+as Version 2 introduces several goroutines for handling asynchronous operations 
+like AI requests and clipboard access.
+
+Development Environment Setup
+To begin the upgrade process, create a new directory for your Version 2 
+development. Copy all the source files from Version 1 into this directory as 
+your starting point. Initialize a new Go module if you have not already done 
+so by running "go mod init goedit" in the project directory.
+Ensure your development environment includes a good text editor or IDE with 
+Go support. Visual Studio Code with the Go extension, GoLand, or even Vim with 
+appropriate plugins work well for this project.
+
+Set up a test environment where you can run the editor and experiment with 
+changes without affecting your production files. Create a separate directory 
+with test files of various sizes and types to verify that your enhancements 
+work correctly across different scenarios.
+
+================================================================================
+2. ARCHITECTURE CHANGES AND DESIGN DECISIONS
+================================================================================
+The transition from Version 1 to Version 2 required fundamental changes to the 
+editor's architecture. Version 1 used a simple, monolithic structure where a 
+single Editor struct managed everything. Version 2 introduces a modular 
+architecture with separate components for different responsibilities.
+
+Separation of Concerns
+In Version 1, the Editor struct contained all functionality including buffer 
+management, cursor tracking, and rendering. This approach worked for a simple 
+single-file editor but became unwieldy when adding multi-tab support and 
+additional features.
+
+Version 2 separates these concerns into distinct modules. The Buffer handles 
+all text manipulation and storage. The Cursor manages position tracking. The 
+TabManager orchestrates multiple files. The ClipboardManager handles system 
+clipboard operations. The OllamaClient manages AI interactions. This separation 
+makes the code more maintainable and testable.
+
+Here is how the Version 1 Editor struct looked:
+
+type Editor struct {
+    screen    tcell.Screen
+    lines     []string
+    cursorRow int
+    cursorCol int
+    filename  string
+    modified  bool
+}
+
+This structure mixed concerns by keeping both the data (lines) and the 
+presentation (screen) in the same place. The cursor position was tightly 
+coupled to the editor instance, making it impossible to track multiple files.
+In Version 2, we refactored this into separate components:
+
+type Editor struct {
+    screen         tcell.Screen
+    tabManager     *TabManager
+    clipboard      *ClipboardManager
+    width          int
+    height         int
+    statusMsg      string
+    statusMsgMutex sync.RWMutex
+    mode           EditorMode
+    llmClient      *OllamaClient
+}
+
+Notice how the editor no longer directly manages lines or cursor position. 
+Instead, it delegates these responsibilities to the TabManager, which in turn 
+manages individual Tab instances. Each Tab contains its own Buffer and Cursor, 
+allowing independent management of multiple files.
+
+Introducing the Tab Abstraction
+The Tab abstraction is central to Version 2's multi-file support. A Tab 
+represents a single file being edited, encapsulating everything needed to 
+manage that file independently.
+Here is the Tab structure:
+
+type Tab struct {
+    buffer    *Buffer
+    cursor    *Cursor
+    offsetRow int
+    offsetCol int
+}
+
+Each Tab maintains its own buffer for text content, cursor for position 
+tracking, and offset values for scrolling. This design allows the editor to 
+switch between tabs without losing state. When you switch from one tab to 
+another, the current tab's state is preserved, and the new tab's state is 
+restored.
+
+The offsetRow and offsetCol fields track the viewport position within the file. 
+When a file is larger than the screen, these offsets determine which portion 
+of the file is visible. Each tab maintains its own offsets, so scrolling in 
+one file does not affect the view in another file.
+
+Thread Safety Considerations
+Version 2 introduces concurrent operations, particularly for AI requests and 
+clipboard access. These operations run in separate goroutines to keep the 
+editor responsive. However, this concurrency introduces the need for thread 
+safety.
+
+In Version 1, everything ran in a single goroutine, so thread safety was not 
+a concern. Version 2 uses mutexes to protect shared state. For example, the 
+status message can be updated from multiple goroutines (the main UI thread and 
+AI response handlers), so we protect it with a mutex:
+
+type Editor struct {
+    statusMsg      string
+    statusMsgMutex sync.RWMutex
+    // other fields...
+}
+
+func (e *Editor) setStatusMsg(msg string) {
+    e.statusMsgMutex.Lock()
+    e.statusMsg = msg
+    e.statusMsgMutex.Unlock()
+}
+
+func (e *Editor) getStatusMsg() string {
+    e.statusMsgMutex.RLock()
+    defer e.statusMsgMutex.RUnlock()
+    return e.statusMsg
+}
+
+The setStatusMsg function acquires a write lock before modifying the status 
+message, ensuring that no other goroutine can read or write the message 
+simultaneously. The getStatusMsg function uses a read lock, allowing multiple 
+goroutines to read the message concurrently but preventing writes during reads.
+This pattern appears throughout Version 2 wherever state is accessed from 
+multiple goroutines. The AI response text uses a similar mutex-protected 
+pattern, as does the flag indicating whether an AI request is in progress.
+
+Error Handling Philosophy
+Version 1 used basic error handling, often simply returning errors to the 
+caller without much context. Version 2 implements comprehensive error handling 
+with detailed error messages and graceful degradation.
+
+For example, when clipboard operations fail in Version 2, the editor falls 
+back to an internal clipboard buffer rather than failing completely:
+
+func (cm *ClipboardManager) Copy(text string) error {
+    // Try system clipboard first
+    err := cm.copyToSystem(text)
+    if err != nil {
+        // Fall back to internal buffer
+        cm.fallback = text
+        return nil  // Don't propagate error
+    }
+    cm.fallback = text  // Keep copy in fallback too
+    return nil
+}
+
+This approach ensures that users can always copy and paste within the editor, 
+even if system clipboard integration fails due to missing utilities or 
+permission issues. The editor degrades gracefully rather than becoming 
+unusable.
+
+Similarly, AI features check for Ollama availability before attempting 
+requests and provide helpful error messages when issues occur:
+
+func (e *Editor) checkOllamaSetup() error {
+    if !e.llmClient.IsAvailable() {
+        return fmt.Errorf("Ollama not running. Start with: ollama serve")
+    }
+    
+    if err := e.llmClient.CheckModel(); err != nil {
+        return err
+    }
+    
+    return nil
+}
+
+These checks happen before the user invests time typing a prompt, preventing 
+frustration from failed requests. The error messages include actionable 
+guidance, telling users exactly what they need to do to fix the problem.
+
+State Management
+Version 1 maintained minimal state, tracking only the current file's content 
+and cursor position. Version 2 manages significantly more state including 
+multiple tabs, clipboard content, AI responses, and user interface modes.
+We introduced an EditorMode enumeration to track what the user is currently 
+doing:
+
+type EditorMode int
+
+const (
+    ModeNormal EditorMode = iota
+    ModeFind
+    ModeGoto
+    ModeLLM
+    ModeFilename
+)
+
+Each mode changes how the editor interprets keyboard input. In ModeNormal, 
+keys perform standard editing operations. In ModeFind, keys build a search 
+query. In ModeLLM, keys compose an AI prompt. This state machine approach 
+makes the editor's behavior predictable and easier to reason about.
+The mode system also enables better user feedback. The status bar displays 
+different messages depending on the current mode, helping users understand 
+what the editor expects from them.
+
+================================================================================
+3. ADDING MULTI-TAB SUPPORT
+================================================================================
+Multi-tab support is one of the most significant enhancements in Version 2. 
+This feature allows users to edit multiple files simultaneously, switching 
+between them with simple keyboard shortcuts. Implementing this required 
+creating new data structures and refactoring how the editor manages files.
+
+Creating the TabManager
+The TabManager is responsible for maintaining the collection of open tabs and 
+tracking which tab is currently active. Here is its structure:
+
+type TabManager struct {
+    tabs      []*Tab
+    activeTab int
+}
+
+The tabs slice holds pointers to all open Tab instances. Using pointers is 
+important because we need to modify tab state (like cursor position and scroll 
+offset) as the user works. The activeTab field is an index into the tabs 
+slice, indicating which tab is currently visible and receiving input.
+We initialize the TabManager with a constructor function:
+
+func NewTabManager() *TabManager {
+    return &amp;TabManager{
+        tabs:      make([]*Tab, 0),
+        activeTab: -1,
+    }
+}
+
+The activeTab starts at negative one to indicate that no tabs are open yet. 
+This sentinel value helps us detect the initial state and handle it 
+appropriately. The tabs slice starts empty, with capacity zero, and grows 
+dynamically as tabs are added.
+
+Adding and Managing Tabs
+Adding a new tab involves creating a Buffer for the file content, a Cursor for 
+position tracking, and wrapping them in a Tab structure:
+
+func (tm *TabManager) AddTab(filename string) error {
+    buffer, err := NewBuffer(filename)
+    if err != nil {
+        return err
+    }
+    
+    tab := &amp;Tab{
+        buffer:    buffer,
+        cursor:    NewCursor(),
+        offsetRow: 0,
+        offsetCol: 0,
+    }
+    
+    tm.tabs = append(tm.tabs, tab)
+    tm.activeTab = len(tm.tabs) - 1
+    
+    return nil
+}
+
+This function first creates a Buffer by calling NewBuffer with the filename. 
+The Buffer constructor handles loading the file from disk if it exists, or 
+creating an empty buffer for new files. If the file cannot be loaded (due to 
+permission errors or other issues), the error is returned immediately.
+
+If the buffer creation succeeds, we create a new Tab instance with a fresh 
+Cursor and zero offsets. The cursor starts at position zero, zero (top-left 
+corner), and the offsets start at zero, meaning the viewport shows the 
+beginning of the file.
+
+We append the new tab to the tabs slice and set activeTab to point to it. 
+Using "len(tm.tabs) - 1" gives us the index of the newly added tab, since 
+slice indices are zero-based.
+
+Switching Between Tabs
+Users switch between tabs using the Tab and Shift-Tab keys. The TabManager 
+provides methods for moving forward and backward through the tab list:
+
+func (tm *TabManager) NextTab() {
+    if len(tm.tabs) == 0 {
+        return
+    }
+    tm.activeTab = (tm.activeTab + 1) % len(tm.tabs)
+}
+
+func (tm *TabManager) PrevTab() {
+    if len(tm.tabs) == 0 {
+        return
+    }
+    tm.activeTab--
+    if tm.activeTab < 0 {
+        tm.activeTab = len(tm.tabs) - 1
+    }
+}
+
+The NextTab function uses modulo arithmetic to wrap around to the first tab 
+when moving past the last tab. If you are on tab three of three and press Tab, 
+you return to tab zero. This creates a circular navigation pattern that feels 
+natural and prevents the user from getting stuck at the end of the tab list.
+
+The PrevTab function decrements the active tab index and checks if it went 
+negative. If so, it wraps around to the last tab. This provides the same 
+circular navigation in the reverse direction.
+
+Both functions check if the tabs slice is empty before attempting navigation. 
+This prevents index-out-of-bounds errors when no tabs are open, though in 
+practice, the editor always maintains at least one tab.
+
+Closing Tabs
+Closing a tab requires removing it from the slice and adjusting the active tab 
+index appropriately:
+
+func (tm *TabManager) CloseTab() bool {
+    if len(tm.tabs) == 0 {
+        return false
+    }
+    
+    if len(tm.tabs) == 1 {
+        return true  // Signal to quit editor
+    }
+    
+    tm.tabs = append(tm.tabs[:tm.activeTab], 
+                    tm.tabs[tm.activeTab+1:]...)
+    
+    if tm.activeTab >= len(tm.tabs) {
+        tm.activeTab = len(tm.tabs) - 1
+    }
+    
+    return false
+}
+
+This function returns a boolean indicating whether the editor should quit. If 
+only one tab remains and the user tries to close it, we return true to signal 
+that the editor should exit. This prevents the editor from entering a state 
+with no open tabs.
+
+If multiple tabs exist, we remove the active tab by creating a new slice that 
+excludes it. The expression "tm.tabs[:tm.activeTab]" gives us all tabs before 
+the active one, and "tm.tabs[tm.activeTab+1:]" gives us all tabs after it. 
+Appending these creates a new slice without the active tab.
+
+After removing the tab, we check if the active tab index is now out of bounds. 
+This happens when closing the last tab in the list. If so, we move the active 
+tab index to the new last tab.
+
+Integrating Tabs with the Editor
+The main Editor struct now uses the TabManager instead of directly managing 
+file content:
+
+type Editor struct {
+    screen         tcell.Screen
+    tabManager     *TabManager
+    clipboard      *ClipboardManager
+    width          int
+    height         int
+    statusMsg      string
+    statusMsgMutex sync.RWMutex
+    mode           EditorMode
+    // ... other fields
+}
+
+When the editor needs to perform an operation on the current file, it retrieves 
+the active tab from the TabManager:
+
+func (e *Editor) handleNormalMode(ev *tcell.EventKey) bool {
+    tab := e.tabManager.GetActiveTab()
+    if tab == nil || tab.buffer == nil || tab.cursor == nil {
+        return true
+    }
+    
+    // Now work with tab.buffer and tab.cursor
+    // ...
+}
+
+The GetActiveTab method returns the currently active tab or nil if no tabs are 
+open:
+
+func (tm *TabManager) GetActiveTab() *Tab {
+    if tm.activeTab < 0 || tm.activeTab >= len(tm.tabs) {
+        return nil
+    }
+    return tm.tabs[tm.activeTab]
+}
+
+This defensive check prevents crashes if the active tab index is somehow 
+invalid. The calling code checks for nil and handles it gracefully, typically 
+by doing nothing or displaying an error message.
+
+Preserving Tab State
+One of the key benefits of the tab system is that each tab preserves its state 
+independently. When you switch from tab A to tab B and back to tab A, the 
+cursor position, scroll offset, and undo history in tab A remain exactly as 
+you left them.
+
+This works because each Tab instance owns its own Buffer and Cursor. The Buffer 
+maintains the undo and redo stacks:
+
+type Buffer struct {
+    lines     []string
+    filename  string
+    modified  bool
+    undoStack []BufferState
+    redoStack []BufferState
+}
+
+When you perform an edit operation, the buffer saves its current state to the 
+undo stack before making the change. This state includes a copy of all lines 
+and the cursor position:
+
+type BufferState struct {
+    lines     []string
+    cursorRow int
+    cursorCol int
+}
+
+func (b *Buffer) SaveState(cursorRow, cursorCol int) {
+    linesCopy := make([]string, len(b.lines))
+    copy(linesCopy, b.lines)
+
+    state := BufferState{
+        lines:     linesCopy,
+        cursorRow: cursorRow,
+        cursorCol: cursorCol,
+    }
+
+    b.undoStack = append(b.undoStack, state)
+    if len(b.undoStack) > maxUndoLevels {
+        b.undoStack = b.undoStack[1:]
+    }
+
+    b.redoStack = b.redoStack[:0]
+}
+
+The SaveState function creates a deep copy of the lines slice to ensure that 
+subsequent edits do not modify the saved state. We use the built-in copy 
+function to duplicate the slice contents.
+
+The undo stack is limited to fifty levels (defined by maxUndoLevels) to 
+prevent unbounded memory growth. When the stack exceeds this limit, we remove 
+the oldest state by slicing off the first element.
+
+Any new edit clears the redo stack because redo only makes sense for undone 
+operations. Once you make a new change after undoing, the undone changes are 
+no longer relevant.
+
+================================================================================
+4. IMPLEMENTING SYSTEM CLIPBOARD INTEGRATION
+================================================================================
+System clipboard integration allows users to copy and paste content between 
+GoEdit and other applications on their system. This feature required handling 
+three different operating systems (macOS, Linux, and Windows), each with its 
+own clipboard mechanism.
+
+Creating the ClipboardManager
+The ClipboardManager abstracts away the platform-specific details of clipboard 
+access:
+
+type ClipboardManager struct {
+    fallback string
+}
+
+func NewClipboardManager() *ClipboardManager {
+    return &amp;ClipboardManager{
+        fallback: "",
+    }
+}
+
+The fallback field stores clipboard content internally when system clipboard 
+access is unavailable. This ensures that copy and paste work within the editor 
+even if the system clipboard utilities are not installed or accessible.
+
+Platform Detection
+The clipboard implementation uses the runtime package to detect the operating 
+system and choose the appropriate clipboard command:
+
+func (cm *ClipboardManager) Copy(text string) error {
+    if text == "" {
+        cm.fallback = ""
+        return nil
+    }
+
+    var cmdPath string
+    var cmdArgs []string
+    
+    switch runtime.GOOS {
+    case "darwin":
+        cmdPath = "pbcopy"
+        cmdArgs = []string{}
+    case "linux":
+        if _, err := exec.LookPath("xclip"); err == nil {
+            cmdPath = "xclip"
+            cmdArgs = []string{"-selection", "clipboard"}
+        } else if _, err := exec.LookPath("xsel"); err == nil {
+            cmdPath = "xsel"
+            cmdArgs = []string{"--clipboard", "--input"}
+        } else {
+            cm.fallback = text
+            return nil
+        }
+    case "windows":
+        cmdPath = "powershell.exe"
+        cmdArgs = []string{"-NoProfile", "-NonInteractive", 
+                          "-Command", "$input | Set-Clipboard"}
+    default:
+        cm.fallback = text
+        return nil
+    }
+    
+    // Execute clipboard command...
+}
+
+The runtime.GOOS constant contains the operating system name. On macOS, we use 
+pbcopy, which is built into the system. On Linux, we check for xclip first, 
+then xsel as a fallback. Both are common clipboard utilities, but neither is 
+guaranteed to be installed. On Windows, we use PowerShell's Set-Clipboard 
+cmdlet.
+
+The exec.LookPath function searches the system PATH for the specified command. 
+If the command is not found, it returns an error, and we try the next option. 
+If no clipboard utility is available, we store the text in the fallback buffer 
+and return without error.
+
+Executing Clipboard Commands
+Once we have determined the appropriate command, we execute it with proper 
+timeout and error handling:
+
+ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+defer cancel()
+
+cmd := exec.CommandContext(ctx, cmdPath, cmdArgs...)
+
+stdin, err := cmd.StdinPipe()
+if err != nil {
+    cm.fallback = text
+    return nil
+}
+
+if err := cmd.Start(); err != nil {
+    cm.fallback = text
+    return nil
+}
+
+_, writeErr := stdin.Write([]byte(text))
+closeErr := stdin.Close()
+
+if writeErr != nil || closeErr != nil {
+    cm.fallback = text
+    cmd.Process.Kill()
+    return nil
+}
+
+waitErr := cmd.Wait()
+if waitErr != nil &amp;&amp; ctx.Err() != context.DeadlineExceeded {
+    cm.fallback = text
+    return nil
+}
+
+cm.fallback = text
+return nil
+
+We create a context with a three-second timeout to prevent the clipboard 
+operation from hanging indefinitely. This is important because clipboard 
+utilities can sometimes freeze if the X server is not responding (on Linux) or 
+if there are permission issues.
+
+The CommandContext function creates a command that will be automatically killed 
+if the context times out. We use StdinPipe to get a writer for sending text to 
+the command's standard input.
+
+After starting the command, we write the text to its standard input and close 
+the pipe. Both operations can fail, so we check for errors and fall back to 
+the internal buffer if either fails.
+
+Finally, we wait for the command to complete. If it fails and the failure is 
+not due to timeout, we store the text in the fallback buffer. We always store 
+the text in the fallback buffer as well, even when the system clipboard 
+succeeds, so that paste operations can use it if the system clipboard becomes 
+unavailable later.
+
+Pasting from Clipboard
+The paste operation follows a similar pattern but reads from the clipboard 
+command's standard output:
+
+func (cm *ClipboardManager) Paste() (string, error) {
+    var cmdPath string
+    var cmdArgs []string
+    
+    switch runtime.GOOS {
+    case "darwin":
+        cmdPath = "pbpaste"
+        cmdArgs = []string{}
+    case "linux":
+        if _, err := exec.LookPath("xclip"); err == nil {
+            cmdPath = "xclip"
+            cmdArgs = []string{"-selection", "clipboard", "-o"}
+        } else if _, err := exec.LookPath("xsel"); err == nil {
+            cmdPath = "xsel"
+            cmdArgs = []string{"--clipboard", "--output"}
+        } else {
+            return cm.fallback, nil
+        }
+    case "windows":
+        cmdPath = "powershell.exe"
+        cmdArgs = []string{"-NoProfile", "-NonInteractive", 
+                          "-Command", "Get-Clipboard"}
+    default:
+        return cm.fallback, nil
+    }
+    
+    ctx, cancel := context.WithTimeout(context.Background(), 
+                                       3*time.Second)
+    defer cancel()
+    
+    cmd := exec.CommandContext(ctx, cmdPath, cmdArgs...)
+    
+    output, err := cmd.Output()
+    if err == nil &amp;&amp; len(output) > 0 {
+        result := string(output)
+        result = strings.TrimRight(result, "\r\n")
+        if result != "" {
+            cm.fallback = result
+            return result, nil
+        }
+    }
+    
+    return cm.fallback, nil
+}
+
+The paste commands are the output equivalents of the copy commands. On macOS, 
+pbpaste prints the clipboard content to standard output. On Linux, xclip and 
+xsel both support an output mode with the appropriate flags. On Windows, 
+Get-Clipboard retrieves the clipboard content.
+
+We use the Output method instead of managing pipes manually because we only 
+need to read the output, not write to the command. This method is simpler and 
+handles the common case of capturing command output.
+
+After getting the output, we trim trailing newlines that some clipboard 
+utilities add. We update the fallback buffer with the retrieved content so that 
+subsequent pastes within the editor work even if the system clipboard changes.
+
+Integrating Clipboard with Editor Commands
+The editor provides several clipboard-related commands. Ctrl-A copies all text, 
+Ctrl-C copies the current line, Ctrl-X cuts the current line, and Ctrl-V 
+pastes:
+
+case tcell.KeyCtrlA:
+    text := tab.buffer.GetText()
+    e.clipboard.Copy(text)
+    e.setStatusMsg("All text copied to system clipboard")
+
+case tcell.KeyCtrlC:
+    if tab.cursor.Row >= 0 &amp;&amp; tab.cursor.Row < tab.buffer.LineCount() {
+        line := tab.buffer.GetLine(tab.cursor.Row)
+        e.clipboard.Copy(line)
+        e.setStatusMsg("Current line copied to system clipboard")
+    }
+
+case tcell.KeyCtrlX:
+    if tab.cursor.Row >= 0 &amp;&amp; tab.cursor.Row < tab.buffer.LineCount() {
+        line := tab.buffer.GetLine(tab.cursor.Row)
+        e.clipboard.Copy(line)
+        tab.buffer.DeleteLine(tab.cursor.Row)
+        if tab.cursor.Row >= tab.buffer.LineCount() &amp;&amp; 
+           tab.cursor.Row > 0 {
+            tab.cursor.Row--
+        }
+        tab.cursor.Col = 0
+        e.ensureCursorValid(tab)
+        tab.buffer.SaveState(tab.cursor.Row, tab.cursor.Col)
+        e.setStatusMsg("Current line cut to system clipboard")
+    }
+
+The copy-all operation uses GetText to retrieve the entire buffer content as a 
+single string with newlines between lines. The copy-line operation gets just 
+the current line using GetLine with the cursor's row position.
+
+The cut operation combines copy and delete. First, it copies the current line 
+to the clipboard. Then it deletes the line from the buffer. After deletion, it 
+checks if the cursor is now beyond the end of the file and moves it up one 
+line if necessary. It also resets the column to zero and saves the buffer 
+state for undo support.
+
+Paste Operation Details
+The paste operation is more complex because it needs to handle multi-line text 
+correctly:
+
+case tcell.KeyCtrlV:
+    text, err := e.clipboard.Paste()
+    if err == nil &amp;&amp; text != "" {
+        oldRow := tab.cursor.Row
+        oldCol := tab.cursor.Col
+        tab.buffer.InsertText(tab.cursor.Row, tab.cursor.Col, text)
+
+        lines := strings.Split(text, "\n")
+        if len(lines) > 1 {
+            tab.cursor.Row = oldRow + len(lines) - 1
+            if tab.cursor.Row < 0 {
+                tab.cursor.Row = 0
+            }
+            if len(lines) > 0 {
+                lastLine := lines[len(lines)-1]
+                tab.cursor.Col = len(lastLine)
+            }
+        } else {
+            tab.cursor.Col = oldCol + len(text)
+        }
+
+        e.ensureCursorValid(tab)
+        tab.buffer.SaveState(tab.cursor.Row, tab.cursor.Col)
+        e.setStatusMsg("System clipboard content pasted")
+    } else {
+        e.setStatusMsg("Clipboard is empty or unavailable")
+    }
+
+After pasting the text into the buffer, we need to position the cursor at the 
+end of the pasted content. If the pasted text contains multiple lines, we move 
+the cursor to the last line and set the column to the length of that line. If 
+the text is a single line, we just advance the column by the length of the 
+pasted text.
+
+The ensureCursorValid function ensures the cursor position is within the valid 
+range for the buffer. This is important because pasting can change the buffer 
+size in ways that might invalidate the cursor position.
+
+================================================================================
+5. INTEGRATING AI ASSISTANCE WITH OLLAMA
+================================================================================
+AI integration is one of the most innovative features in Version 2. It allows 
+users to ask questions, get code suggestions, and generate text directly within 
+the editor. This feature uses Ollama, a local LLM runtime that keeps all 
+processing on the user's machine for privacy and speed.
+
+Creating the OllamaClient
+The OllamaClient encapsulates all communication with the Ollama server:
+
+type OllamaClient struct {
+    baseURL string
+    model   string
+    client  *http.Client
+}
+
+func NewOllamaClient(baseURL, model string) *OllamaClient {
+    if baseURL == "" {
+        baseURL = "http://localhost:11434"
+    }
+    if model == "" {
+        model = "llama2"
+    }
+
+    return &amp;OllamaClient{
+        baseURL: baseURL,
+        model:   model,
+        client: &amp;http.Client{
+            Timeout: 300 * time.Second,
+        },
+    }
+}
+
+The baseURL specifies where the Ollama server is running. By default, it runs 
+on localhost port 11434. The model field specifies which language model to use. 
+Different models have different capabilities and performance characteristics.
+We create an HTTP client with a five-minute timeout. AI requests can take a 
+long time, especially for complex prompts or large models, so we need a 
+generous timeout. However, we do not want to wait forever if the server is 
+unresponsive.
+
+Checking Ollama Availability
+Before making AI requests, we check if Ollama is running and if the requested 
+model is available:
+
+func (c *OllamaClient) IsAvailable() bool {
+    url := fmt.Sprintf("%s/api/tags", c.baseURL)
+    client := &amp;http.Client{Timeout: 2 * time.Second}
+    
+    ctx, cancel := context.WithTimeout(context.Background(), 
+                                       2*time.Second)
+    defer cancel()
+    
+    req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+    if err != nil {
+        return false
+    }
+    
+    resp, err := client.Do(req)
+    if err != nil {
+        return false
+    }
+    defer resp.Body.Close()
+    
+    return resp.StatusCode == http.StatusOK
+}
+
+This function attempts to connect to the Ollama API's tags endpoint, which 
+lists available models. If the connection succeeds and returns HTTP 200, we 
+know Ollama is running. We use a short two-second timeout because this is just 
+a connectivity check, not a full request.
+
+The CheckModel function goes further and verifies that the specific model we 
+want to use is actually installed:
+
+func (c *OllamaClient) CheckModel() error {
+    url := fmt.Sprintf("%s/api/tags", c.baseURL)
+    
+    ctx, cancel := context.WithTimeout(context.Background(), 
+                                       5*time.Second)
+    defer cancel()
+    
+    req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+    if err != nil {
+        return fmt.Errorf("failed to create request: %w", err)
+    }
+    
+    resp, err := c.client.Do(req)
+    if err != nil {
+        return fmt.Errorf("cannot connect to Ollama: %w", err)
+    }
+    defer resp.Body.Close()
+    
+    if resp.StatusCode != http.StatusOK {
+        return fmt.Errorf("ollama returned status %d", 
+                        resp.StatusCode)
+    }
+    
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return fmt.Errorf("failed to read response: %w", err)
+    }
+    
+    var result struct {
+        Models []struct {
+            Name string `json:"name"`
+        } `json:"models"`
+    }
+    
+    if err := json.Unmarshal(body, &amp;result); err != nil {
+        return fmt.Errorf("failed to parse response: %w", err)
+    }
+    
+    modelFound := false
+    for _, model := range result.Models {
+        if strings.HasPrefix(model.Name, c.model) {
+            modelFound = true
+            break
+        }
+    }
+    
+    if !modelFound {
+        availableModels := make([]string, 0, len(result.Models))
+        for _, model := range result.Models {
+            availableModels = append(availableModels, model.Name)
+        }
+        return fmt.Errorf("model '%s' not found. Available: %s", 
+            c.model, strings.Join(availableModels, ", "))
+    }
+    
+    return nil
+}
+
+This function fetches the list of installed models and checks if our requested 
+model is among them. If not, it returns an error message listing the available 
+models, helping users understand what they need to do to fix the problem.
+
+Making AI Requests
+The Generate function sends a prompt to Ollama and waits for the complete 
+response:
+
+type GenerateRequest struct {
+    Model  string `json:"model"`
+    Prompt string `json:"prompt"`
+    Stream bool   `json:"stream"`
+}
+
+type GenerateResponse struct {
+    Model         string `json:"model"`
+    Response      string `json:"response"`
+    Done          bool   `json:"done"`
+    Context       []int  `json:"context,omitempty"`
+    TotalDuration int64  `json:"total_duration,omitempty"`
+    Error         string `json:"error,omitempty"`
+}
+
+func (c *OllamaClient) Generate(prompt string) (string, error) {
+    return c.GenerateWithCancel(prompt, nil)
+}
+
+func (c *OllamaClient) GenerateWithCancel(prompt string, 
+                                          cancel <-chan bool) 
+                                          (string, error) {
+    if prompt == "" {
+        return "", fmt.Errorf("empty prompt")
+    }
+
+    reqBody := GenerateRequest{
+        Model:  c.model,
+        Prompt: prompt,
+        Stream: false,
+    }
+
+    jsonData, err := json.Marshal(reqBody)
+    if err != nil {
+        return "", fmt.Errorf("failed to marshal request: %w", err)
+    }
+
+    url := fmt.Sprintf("%s/api/generate", c.baseURL)
+
+    ctx, ctxCancel := context.WithCancel(context.Background())
+    defer ctxCancel()
+
+    if cancel != nil {
+        go func() {
+            select {
+            case <-cancel:
+                ctxCancel()
+            case <-ctx.Done():
+            }
+        }()
+    }
+
+    req, err := http.NewRequestWithContext(ctx, "POST", url, 
+                                           bytes.NewBuffer(jsonData))
+    if err != nil {
+        return "", fmt.Errorf("failed to create request: %w", err)
+    }
+    req.Header.Set("Content-Type", "application/json")
+
+    resp, err := c.client.Do(req)
+    if err != nil {
+        if ctx.Err() == context.Canceled {
+            return "", fmt.Errorf("cancelled")
+        }
+        if strings.Contains(err.Error(), "connection refused") {
+            return "", fmt.Errorf(
+                "cannot connect to Ollama (is it running?)")
+        }
+        return "", fmt.Errorf("request failed: %w", err)
+    }
+    defer resp.Body.Close()
+
+    // Handle response...
+}
+
+The GenerateWithCancel function accepts a cancel channel that allows the 
+operation to be interrupted. This is crucial for AI requests because they can 
+take a long time, and users need the ability to cancel if they change their 
+mind or realize they made a mistake in their prompt.
+
+We create a context that can be cancelled and start a goroutine that listens 
+on the cancel channel. When a value is received on that channel, we cancel the 
+context, which aborts the HTTP request.
+
+The request body is a JSON object containing the model name, the prompt, and 
+the stream flag. For non-streaming requests, we set stream to false, which 
+tells Ollama to send the complete response in a single HTTP response.
+
+Processing AI Responses
+After sending the request, we need to read and parse the response:
+
+if resp.StatusCode != http.StatusOK {
+    body, _ := io.ReadAll(resp.Body)
+    bodyStr := string(body)
+    
+    var errResp GenerateResponse
+    if json.Unmarshal(body, &amp;errResp) == nil &amp;&amp; 
+       errResp.Error != "" {
+        return "", fmt.Errorf("ollama error: %s", errResp.Error)
+    }
+    
+    if len(bodyStr) > 200 {
+        bodyStr = bodyStr[:200] + "..."
+    }
+    return "", fmt.Errorf("ollama returned status %d: %s", 
+                        resp.StatusCode, bodyStr)
+}
+
+body, err := io.ReadAll(resp.Body)
+if err != nil {
+    if ctx.Err() == context.Canceled {
+        return "", fmt.Errorf("cancelled")
+    }
+    return "", fmt.Errorf("failed to read response: %w", err)
+}
+
+if len(body) == 0 {
+    return "", fmt.Errorf("empty response from Ollama")
+}
+
+var genResp GenerateResponse
+if err := json.Unmarshal(body, &amp;genResp); err != nil {
+    return "", fmt.Errorf("failed to parse response: %w", err)
+}
+
+if genResp.Error != "" {
+    return "", fmt.Errorf("ollama error: %s", genResp.Error)
+}
+
+response := strings.TrimSpace(genResp.Response)
+
+if response == "" {
+    return "", fmt.Errorf("received empty response from model")
+}
+
+return response, nil
+
+We check the HTTP status code first. If it is not 200 OK, something went wrong. 
+We try to parse the response body as JSON to see if Ollama sent an error 
+message. If so, we return that error message. Otherwise, we return a generic 
+error with the status code and a preview of the response body.
+
+If the status is OK, we read the entire response body and parse it as JSON. 
+The response field contains the generated text. We trim whitespace and check 
+that the response is not empty before returning it.
+
+Asynchronous AI Requests
+To keep the editor responsive during AI requests, we run them in a separate 
+goroutine:
+
+func (e *Editor) askLLMAsync() {
+    if e.llmPrompt == "" {
+        e.setStatusMsg("No prompt entered")
+        return
+    }
+
+    e.aiMutex.Lock()
+    if e.aiInProgress {
+        e.aiMutex.Unlock()
+        e.setStatusMsg(
+            "AI request already in progress. " +
+            "Press Esc to cancel current request")
+        return
+    }
+    e.aiInProgress = true
+    e.aiMutex.Unlock()
+
+    if !e.llmClient.IsAvailable() {
+        e.aiMutex.Lock()
+        e.aiInProgress = false
+        e.aiMutex.Unlock()
+        e.setStatusMsg(
+            "Cannot connect to Ollama. " +
+            "Is it running? Try: ollama serve")
+        return
+    }
+
+    e.setStatusMsg(
+        "Processing AI request... (Press Esc to cancel)")
+
+    go func() {
+        prompt := e.llmPrompt
+        
+        done := make(chan bool, 1)
+        var response string
+        var err error
+        
+        go func() {
+            response, err = e.llmClient.GenerateWithCancel(
+                prompt, e.aiCancel)
+            done <- true
+        }()
+        
+        select {
+        case <-done:
+        case <-time.After(90 * time.Second):
+            select {
+            case e.aiCancel <- true:
+            default:
+            }
+            err = fmt.Errorf("request timeout (90s)")
+        }
+
+        e.aiMutex.Lock()
+        e.aiInProgress = false
+        e.aiMutex.Unlock()
+
+        if err != nil {
+            // Handle error...
+            return
+        }
+
+        e.setLLMResponse(response)
+        
+        preview := response
+        preview = strings.ReplaceAll(preview, "\n", " ")
+        preview = strings.ReplaceAll(preview, "\r", "")
+        preview = strings.TrimSpace(preview)
+        
+        if len(preview) > 60 {
+            preview = preview[:57] + "..."
+        }
+        
+        responseLines := strings.Count(response, "\n") + 1
+        e.setStatusMsg(fmt.Sprintf(
+            "AI response ready (%d lines). Preview: %s | " +
+            "Press Ctrl+K to insert", responseLines, preview))
+    }()
+}
+
+The function first checks if an AI request is already in progress. We use a 
+mutex to protect the aiInProgress flag because it can be accessed from multiple 
+goroutines (the main UI thread and the AI response handler).
+
+If no request is in progress, we set the flag and start a goroutine to handle 
+the request. Inside the goroutine, we start another goroutine to actually make 
+the request and use a select statement to implement a timeout. If the request 
+does not complete within ninety seconds, we send a cancellation signal.
+
+When the request completes (either successfully or with an error), we clear 
+the aiInProgress flag and update the status message. If successful, we store 
+the response and display a preview in the status bar.
+
+================================================================================
+6. ADDING STREAMING AI RESPONSES
+================================================================================
+Streaming AI responses provide real-time feedback as the model generates text, 
+rather than waiting for the complete response. This creates a more interactive 
+experience and lets users see progress on long-running requests.
+
+Understanding Streaming Protocol
+Ollama's streaming API sends the response as a series of JSON objects, one per 
+line. Each object contains a chunk of the generated text:
+
+{"model":"llama2","response":"Hello","done":false}
+{"model":"llama2","response":" world","done":false}
+{"model":"llama2","response":"!","done":false}
+{"model":"llama2","response":"","done":true}
+
+The done field indicates whether this is the final chunk. The response field 
+contains the text for this chunk. We need to concatenate all the chunks to get 
+the complete response.
+
+Implementing Stream Processing
+The GenerateStream function handles streaming responses:
+
+func (c *OllamaClient) GenerateStream(prompt string, 
+                                      cancel <-chan bool, 
+                                      onChunk func(string)) error {
+    if prompt == "" {
+        return fmt.Errorf("empty prompt")
+    }
+
+    if onChunk == nil {
+        return fmt.Errorf("onChunk callback is required")
+    }
+
+    reqBody := GenerateRequest{
+        Model:  c.model,
+        Prompt: prompt,
+        Stream: true,
+    }
+
+    jsonData, err := json.Marshal(reqBody)
+    if err != nil {
+        return fmt.Errorf("failed to marshal request: %w", err)
+    }
+
+    url := fmt.Sprintf("%s/api/generate", c.baseURL)
+
+    ctx, ctxCancel := context.WithCancel(context.Background())
+    defer ctxCancel()
+
+    if cancel != nil {
+        go func() {
+            select {
+            case <-cancel:
+                ctxCancel()
+            case <-ctx.Done():
+            }
+        }()
+    }
+
+    req, err := http.NewRequestWithContext(ctx, "POST", url, 
+                                           bytes.NewBuffer(jsonData))
+    if err != nil {
+        return fmt.Errorf("failed to create request: %w", err)
+    }
+    req.Header.Set("Content-Type", "application/json")
+
+    resp, err := c.client.Do(req)
+    if err != nil {
+        if ctx.Err() == context.Canceled {
+            return fmt.Errorf("cancelled")
+        }
+        if strings.Contains(err.Error(), "connection refused") {
+            return fmt.Errorf(
+                "cannot connect to Ollama (is it running?)")
+        }
+        return fmt.Errorf("request failed: %w", err)
+    }
+    defer resp.Body.Close()
+
+    // Process streaming response...
+}
+
+The function takes an onChunk callback that is called for each chunk of text 
+received. This allows the caller to process chunks as they arrive rather than 
+waiting for the complete response.
+
+We set the stream field to true in the request body to tell Ollama we want a 
+streaming response. The rest of the request setup is the same as for 
+non-streaming requests.
+
+Reading the Stream
+We use a bufio.Scanner to read the response line by line:
+
+scanner := bufio.NewScanner(resp.Body)
+buf := make([]byte, 0, 64*1024)
+scanner.Buffer(buf, 1024*1024)
+
+for scanner.Scan() {
+    select {
+    case <-ctx.Done():
+        return fmt.Errorf("cancelled")
+    default:
+    }
+    
+    line := scanner.Text()
+    if line == "" {
+        continue
+    }
+
+    var genResp GenerateResponse
+    if err := json.Unmarshal([]byte(line), &amp;genResp); err != nil {
+        continue
+    }
+
+    if genResp.Error != "" {
+        return fmt.Errorf("ollama error: %s", genResp.Error)
+    }
+
+    if genResp.Response != "" {
+        onChunk(genResp.Response)
+    }
+
+    if genResp.Done {
+        break
+    }
+}
+
+if err := scanner.Err(); err != nil {
+    if ctx.Err() == context.Canceled {
+        return fmt.Errorf("cancelled")
+    }
+    return fmt.Errorf("stream error: %w", err)
+}
+
+return nil
+
+The Scanner reads the response body line by line. We configure it with a 
+larger buffer (one megabyte) to handle long lines that might occur with large 
+chunks of generated text.
+
+For each line, we check if the context has been cancelled. This allows us to 
+stop processing the stream if the user presses Escape. We parse the line as 
+JSON and extract the response chunk.
+
+If the chunk is not empty, we call the onChunk callback with it. The callback 
+can then update the UI or accumulate the chunks into a complete response. When 
+we see the done flag set to true, we break out of the loop and return.
+
+Integrating Streaming with the Editor
+The editor's askLLMStream function uses the streaming API:
+
+func (e *Editor) askLLMStream() {
+    if e.llmPrompt == "" {
+        e.setStatusMsg("No prompt entered")
+        return
+    }
+
+    e.aiMutex.Lock()
+    if e.aiInProgress {
+        e.aiMutex.Unlock()
+        e.setStatusMsg(
+            "AI request already in progress. " +
+            "Press Esc to cancel current request")
+        return
+    }
+    e.aiInProgress = true
+    e.aiMutex.Unlock()
+
+    e.setLLMResponse("")
+    e.setStatusMsg(
+        "Streaming AI response... (Press Esc to cancel)")
+
+    go func() {
+        prompt := e.llmPrompt
+        
+        err := e.llmClient.GenerateStream(prompt, e.aiCancel, 
+            func(chunk string) {
+                e.appendLLMResponse(chunk)
+                
+                response := e.getLLMResponse()
+                preview := response
+                preview = strings.ReplaceAll(preview, "\n", " ")
+                preview = strings.ReplaceAll(preview, "\r", "")
+                preview = strings.TrimSpace(preview)
+                
+                if len(preview) > 50 {
+                    preview = preview[:47] + "..."
+                }
+                
+                e.setStatusMsg(fmt.Sprintf("Streaming: %s", 
+                                          preview))
+            })
+
+        e.aiMutex.Lock()
+        e.aiInProgress = false
+        e.aiMutex.Unlock()
+
+        if err != nil {
+            // Handle error...
+            return
+        }
+
+        response := e.getLLMResponse()
+        if response == "" {
+            e.setStatusMsg(
+                "AI returned empty response. " +
+                "Try rephrasing your prompt")
+            return
+        }
+        
+        responseLines := strings.Count(response, "\n") + 1
+        preview := response
+        preview = strings.ReplaceAll(preview, "\n", " ")
+        preview = strings.ReplaceAll(preview, "\r", "")
+        preview = strings.TrimSpace(preview)
+        
+        if len(preview) > 60 {
+            preview = preview[:57] + "..."
+        }
+        
+        e.setStatusMsg(fmt.Sprintf(
+            "Stream complete (%d lines). Preview: %s | " +
+            "Press Ctrl+K to insert", responseLines, preview))
+    }()
+}
+
+We clear the stored response before starting the stream to ensure we do not 
+mix old and new content. The onChunk callback appends each chunk to the stored 
+response and updates the status message with a preview of the accumulated text.
+This provides real-time feedback to the user. They can see the response being 
+generated word by word, which is especially useful for long responses. If they 
+see the response going in the wrong direction, they can press Escape to cancel 
+and try a different prompt.
+
+Thread-Safe Response Accumulation
+The appendLLMResponse function safely appends chunks from the streaming 
+callback:
+
+func (e *Editor) appendLLMResponse(chunk string) {
+    e.llmMutex.Lock()
+    e.llmResponse += chunk
+    e.llmMutex.Unlock()
+}
+
+This function is called from the streaming callback, which runs in a different 
+goroutine than the main UI thread. We use a mutex to ensure that appending to 
+the response string is atomic and does not conflict with reads from the UI 
+thread.
+
+The getLLMResponse function provides thread-safe read access:
+
+func (e *Editor) getLLMResponse() string {
+    e.llmMutex.RLock()
+    defer e.llmMutex.RUnlock()
+    return e.llmResponse
+}
+
+Using a read lock allows multiple goroutines to read the response 
+simultaneously, which is safe because they are not modifying it. The read lock 
+blocks if a write lock is held, ensuring that reads never see a partially 
+written response.
+
+================================================================================
+7. ENHANCING THE USER INTERFACE
+================================================================================
+Version 2 significantly improves the user interface with a visual tab bar, 
+better status messages, and clearer feedback for ongoing operations. These 
+enhancements make the editor more intuitive and easier to use.
+
+Implementing the Tab Bar
+The tab bar displays all open tabs with the active tab highlighted:
+
+func (e *Editor) renderTabBar() {
+    y := 0
+    
+    style := tcell.StyleDefault.
+        Background(tcell.ColorDarkBlue).
+        Foreground(tcell.ColorWhite)
+    
+    activeStyle := tcell.StyleDefault.
+        Background(tcell.ColorBlue).
+        Foreground(tcell.ColorWhite).
+        Bold(true)
+
+    for x := 0; x < e.width; x++ {
+        if y >= 0 &amp;&amp; y < e.height+3 {
+            e.screen.SetContent(x, y, ' ', nil, style)
+        }
+    }
+
+    x := 0
+    tabCount := e.tabManager.GetTabCount()
+    
+    for i := 0; i < tabCount &amp;&amp; x < e.width; i++ {
+        tabName := e.tabManager.GetTabName(i)
+        isActive := e.tabManager.IsActiveTab(i)
+        
+        tabLabel := fmt.Sprintf(" %d:%s ", i+1, tabName)
+        
+        if len(tabLabel) > 20 {
+            tabLabel = tabLabel[:17] + ".. "
+        }
+        
+        tabStyle := style
+        if isActive {
+            tabStyle = activeStyle
+        }
+        
+        if x+len(tabLabel) > e.width {
+            break
+        }
+        
+        for _, r := range tabLabel {
+            if x >= e.width {
+                break
+            }
+            if y >= 0 &amp;&amp; y < e.height+3 {
+                e.screen.SetContent(x, y, r, nil, tabStyle)
+            }
+            x++
+        }
+        
+        if i < tabCount-1 &amp;&amp; x < e.width {
+            if y >= 0 &amp;&amp; y < e.height+3 {
+                e.screen.SetContent(x, y, '│', nil, style)
+            }
+            x++
+        }
+    }
+}
+
+The tab bar occupies the top line of the screen. We first fill the entire line 
+with the background color to ensure there are no gaps. Then we iterate through 
+all tabs, rendering each one with its number and name.
+
+The active tab uses a different style (brighter blue and bold text) to make it 
+stand out. This visual distinction helps users quickly identify which file they 
+are currently editing.
+
+We truncate long tab names to prevent them from taking up too much space. Each 
+tab is limited to twenty characters. If the name is longer, we truncate it and 
+add an ellipsis to indicate the truncation.
+
+Between tabs, we draw a vertical bar separator to visually distinguish them. 
+This makes the tab boundaries clear even when multiple tabs are open.
+
+Getting Tab Names
+The GetTabName function formats the tab name with modification indicators:
+
+func (tm *TabManager) GetTabName(index int) string {
+    if index < 0 || index >= len(tm.tabs) {
+        return ""
+    }
+    
+    tab := tm.tabs[index]
+    if tab == nil || tab.buffer == nil {
+        return "[Error]"
+    }
+    
+    filename := tab.buffer.filename
+    if filename == "" {
+        filename = "[No Name]"
+    } else {
+        filename = filepath.Base(filename)
+    }
+    
+    if tab.buffer.modified {
+        return filename + " [+]"
+    }
+    return filename
+}
+
+For files without a name (new, unsaved files), we display "[No Name]". For 
+named files, we show just the base name without the full path to save space. 
+If the file has unsaved changes, we append " [+]" to indicate the modification.
+This naming scheme provides all the essential information at a glance: which 
+file you are looking at and whether it has unsaved changes.
+
+Enhanced Status Bar
+The status bar in Version 2 provides much more information than Version 1:
+
+func (e *Editor) renderStatusBar() {
+    tab := e.tabManager.GetActiveTab()
+    if tab == nil || tab.buffer == nil || tab.cursor == nil {
+        return
+    }
+
+    y := e.height + 1
+    if y < 0 || y >= e.height+3 {
+        return
+    }
+
+    style := tcell.StyleDefault.
+        Background(tcell.ColorWhite).
+        Foreground(tcell.ColorBlack)
+
+    e.aiMutex.Lock()
+    inProgress := e.aiInProgress
+    e.aiMutex.Unlock()
+
+    if inProgress {
+        style = tcell.StyleDefault.
+            Background(tcell.ColorYellow).
+            Foreground(tcell.ColorBlack)
+    }
+
+    for x := 0; x < e.width; x++ {
+        if y >= 0 &amp;&amp; y < e.height+3 {
+            e.screen.SetContent(x, y, ' ', nil, style)
+        }
+        if y+1 >= 0 &amp;&amp; y+1 < e.height+3 {
+            e.screen.SetContent(x, y+1, ' ', nil, style)
+        }
+    }
+
+    statusMsg := e.getStatusMsg()
+    if len(statusMsg) > e.width &amp;&amp; e.width > 3 {
+        statusMsg = statusMsg[:e.width-3] + "..."
+    }
+    e.drawString(0, y, statusMsg, style)
+
+    modMark := ""
+    if tab.buffer.modified {
+        modMark = " [+]"
+    }
+    filename := tab.buffer.filename
+    if filename == "" {
+        filename = "[No Name]"
+    } else {
+        filename = filepath.Base(filename)
+        if len(filename) > 20 {
+            filename = filename[:17] + "..."
+        }
+    }
+
+    info := fmt.Sprintf("%s%s | Ln %d/%d | Col %d | Tab %d/%d",
+        filename, modMark, tab.cursor.Row+1, 
+        tab.buffer.LineCount(), tab.cursor.Col+1,
+        e.tabManager.activeTab+1, e.tabManager.GetTabCount())
+
+    if len(info) > e.width &amp;&amp; e.width > 0 {
+        info = info[:e.width]
+    }
+
+    if y+1 >= 0 &amp;&amp; y+1 < e.height+3 {
+        e.drawString(0, y+1, info, style)
+    }
+}
+
+The status bar uses two lines. The first line displays the current status 
+message, which changes based on what the user is doing (editing, searching, 
+waiting for AI, etc.). The second line shows file information including the 
+filename, modification status, cursor position, and tab position.
+
+When an AI request is in progress, the status bar background changes to yellow 
+to provide visual feedback. This helps users understand that the editor is 
+working on something and has not frozen.
+
+The cursor position is displayed as "Ln X/Y" where X is the current line and Y 
+is the total number of lines. This helps users understand where they are in 
+the file. The column position shows the cursor's horizontal position.
+The tab information shows which tab is active and how many tabs are open in 
+total. This helps users navigate when working with multiple files.
+
+Visual Feedback for Operations
+Throughout the editor, we provide clear visual feedback for all operations. 
+When you copy text, the status message confirms it. When you save a file, the 
+message shows the filename and line count. When an error occurs, the message 
+explains what went wrong and often suggests how to fix it.
+
+For example, when saving a file:
+
+if err := tab.buffer.Save(); err != nil {
+    e.setStatusMsg(fmt.Sprintf("Save failed: %v", err))
+} else {
+    basename := filepath.Base(tab.buffer.filename)
+    e.setStatusMsg(fmt.Sprintf("Saved '%s' (%d lines)", 
+                              basename, tab.buffer.LineCount()))
+}
+
+The success message includes the filename and line count, confirming exactly 
+what was saved. The error message includes the specific error returned by the 
+save operation, helping users diagnose problems.
+For AI operations, we provide detailed feedback about what is happening:
+
+e.setStatusMsg("Processing AI request... (Press Esc to cancel)")
+
+This message tells users that work is in progress and reminds them how to 
+cancel if needed. When the response arrives, we show a preview:
+
+e.setStatusMsg(fmt.Sprintf(
+    "AI response ready (%d lines). Preview: %s | " +
+    "Press Ctrl+K to insert", responseLines, preview))
+
+This tells users that the response is ready, how many lines it contains, shows 
+a preview of the content, and reminds them how to insert it into their 
+document.
+
+================================================================================
+8. IMPROVING ERROR HANDLING AND THREAD SAFETY
+================================================================================
+Version 2 implements comprehensive error handling and thread safety mechanisms 
+to ensure reliability and prevent crashes. These improvements make the editor 
+robust enough for production use.
+
+Defensive Nil Checks
+Throughout Version 2, we add defensive nil checks before dereferencing 
+pointers:
+
+func (e *Editor) handleNormalMode(ev *tcell.EventKey) bool {
+    tab := e.tabManager.GetActiveTab()
+    if tab == nil || tab.buffer == nil || tab.cursor == nil {
+        return true
+    }
+    
+    // Safe to use tab, tab.buffer, and tab.cursor here
+}
+
+This pattern appears in every function that works with tabs. We check that the 
+tab exists and that its buffer and cursor are not nil before using them. If 
+any of these checks fail, we return early without attempting the operation.
+This prevents crashes that could occur if the tab manager is in an unexpected 
+state. While these conditions should never occur in normal operation, defensive 
+programming ensures that if they do occur (due to a bug or unexpected user 
+action), the editor does not crash.
+
+Bounds Checking
+We carefully check array and slice bounds before accessing elements:
+
+func (b *Buffer) GetLine(row int) string {
+    if row < 0 || row >= len(b.lines) {
+        return ""
+    }
+    return b.lines[row]
+}
+
+func (b *Buffer) InsertChar(row, col int, ch rune) {
+    if row < 0 || row >= len(b.lines) {
+        return
+    }
+
+    line := b.lines[row]
+    if col < 0 {
+        col = 0
+    }
+    if col > len(line) {
+        col = len(line)
+    }
+
+    newLine := line[:col] + string(ch) + line[col:]
+    b.lines[row] = newLine
+    b.modified = true
+}
+
+The GetLine function returns an empty string if the row is out of bounds rather 
+than panicking. The InsertChar function clamps the column to valid values 
+(between zero and the line length) rather than allowing out-of-bounds access.
+This defensive approach ensures that even if the cursor position becomes 
+invalid due to a bug, the editor continues to function rather than crashing.
+
+Cursor Validation
+The ensureCursorValid function ensures the cursor is always at a valid 
+position:
+
+func (e *Editor) ensureCursorValid(tab *Tab) {
+    if tab == nil || tab.cursor == nil || tab.buffer == nil {
+        return
+    }
+
+    if tab.cursor.Row < 0 {
+        tab.cursor.Row = 0
+    }
+    maxRow := tab.buffer.LineCount() - 1
+    if maxRow < 0 {
+        maxRow = 0
+    }
+    if tab.cursor.Row > maxRow {
+        tab.cursor.Row = maxRow
+    }
+
+    lineLen := len(tab.buffer.GetLine(tab.cursor.Row))
+    if tab.cursor.Col > lineLen {
+        tab.cursor.Col = lineLen
+    }
+    if tab.cursor.Col < 0 {
+        tab.cursor.Col = 0
+    }
+}
+
+This function is called after any operation that might invalidate the cursor 
+position, such as deleting lines, pasting text, or switching tabs. It ensures 
+the row is within the valid range for the buffer and the column is within the 
+valid range for the current line.
+
+By consistently calling this function, we prevent the cursor from ever being 
+in an invalid state, which could cause rendering errors or crashes.
+
+Thread-Safe State Access
+All state that is accessed from multiple goroutines is protected by mutexes:
+
+type Editor struct {
+    statusMsg      string
+    statusMsgMutex sync.RWMutex
+    llmResponse    string
+    llmMutex       sync.RWMutex
+    aiMutex        sync.Mutex
+    aiInProgress   bool
+    // ...
+}
+
+The status message and LLM response use read-write mutexes because they are 
+read frequently but written occasionally. Read-write mutexes allow multiple 
+concurrent readers, improving performance when many goroutines need to read 
+the same data.
+
+The aiInProgress flag uses a regular mutex because it is both read and written 
+with similar frequency, and the operations are simple enough that the overhead 
+of a read-write mutex would not provide benefits.
+
+All access to these fields goes through mutex-protected functions:
+
+func (e *Editor) setStatusMsg(msg string) {
+    e.statusMsgMutex.Lock()
+    e.statusMsg = msg
+    e.statusMsgMutex.Unlock()
+}
+
+func (e *Editor) getStatusMsg() string {
+    e.statusMsgMutex.RLock()
+    defer e.statusMsgMutex.RUnlock()
+    return e.statusMsg
+}
+
+This encapsulation ensures that the mutex is always acquired before accessing 
+the field and always released afterward, even if a panic occurs.
+
+Context-Based Cancellation
+All long-running operations support cancellation through contexts:
+
+ctx, cancel := context.WithTimeout(context.Background(), 
+                                   3*time.Second)
+defer cancel()
+
+cmd := exec.CommandContext(ctx, cmdPath, cmdArgs...)
+
+The context automatically cancels the command if it runs longer than the 
+timeout. The defer statement ensures the cancel function is called even if the 
+function returns early due to an error.
+For operations that need user-initiated cancellation, we use a cancel channel:
+
+if cancel != nil {
+    go func() {
+        select {
+        case <-cancel:
+            ctxCancel()
+        case <-ctx.Done():
+        }
+    }()
+}
+
+This goroutine listens on the cancel channel and cancels the context when a 
+value is received. The select statement also checks if the context is already 
+done to avoid leaking the goroutine.
+
+Error Message Quality
+Version 2 provides high-quality error messages that help users understand and 
+fix problems:
+
+if err != nil {
+    errMsg := err.Error()
+    if errMsg == "cancelled" {
+        e.setStatusMsg("AI request cancelled by user")
+    } else if strings.Contains(errMsg, "cannot connect") {
+        e.setStatusMsg("Cannot connect to Ollama. Run: ollama serve")
+    } else if strings.Contains(errMsg, "model") &amp;&amp; 
+              strings.Contains(errMsg, "not found") {
+        modelName := e.llmClient.model
+        e.setStatusMsg(fmt.Sprintf(
+            "Model '%s' not found. Run: ollama pull %s", 
+            modelName, modelName))
+    } else {
+        if len(errMsg) > 70 {
+            errMsg = errMsg[:67] + "..."
+        }
+        e.setStatusMsg(fmt.Sprintf("AI error: %s", errMsg))
+    }
+}
+
+We check for specific error conditions and provide tailored messages for each. 
+For connection errors, we tell users to start Ollama. For missing models, we 
+tell them exactly which command to run to install the model.
+
+For generic errors, we truncate long messages to fit in the status bar and 
+prefix them with a category ("AI error") to provide context.
+
+Resource Cleanup
+All resources are properly cleaned up using defer statements:
+
+file, err := os.Open(b.filename)
+if err != nil {
+    return err
+}
+defer file.Close()
+
+The defer statement ensures the file is closed even if an error occurs during 
+reading. This prevents file descriptor leaks.
+For HTTP requests:
+resp, err := c.client.Do(req)
+if err != nil {
+    return "", err
+}
+defer resp.Body.Close()
+
+The response body must be closed to release the underlying connection back to 
+the connection pool. The defer ensures this happens even if we return early 
+due to an error.
+
+================================================================================
+9. PERFORMANCE OPTIMIZATIONS
+================================================================================
+Version 2 includes several performance optimizations to ensure the editor 
+remains responsive even with large files and many tabs open.
+
+Efficient String Operations
+When inserting or deleting characters, we use efficient string concatenation:
+
+func (b *Buffer) InsertChar(row, col int, ch rune) {
+    if row < 0 || row >= len(b.lines) {
+        return
+    }
+
+    line := b.lines[row]
+    if col < 0 {
+        col = 0
+    }
+    if col > len(line) {
+        col = len(line)
+    }
+
+    newLine := line[:col] + string(ch) + line[col:]
+    b.lines[row] = newLine
+    b.modified = true
+}
+
+This approach creates a new string by concatenating three parts: the portion 
+before the insertion point, the new character, and the portion after the 
+insertion point. While this creates a new string, it is more efficient than 
+using a bytes.Buffer for single-character operations.
+
+For multi-line insertions, we use a more sophisticated approach:
+
+func (b *Buffer) InsertText(row, col int, text string) {
+    // ... validation ...
+
+    lines := strings.Split(text, "\n")
+    if len(lines) == 1 {
+        b.lines[row] = line[:col] + text + line[col:]
+    } else {
+        before := line[:col]
+        after := line[col:]
+
+        b.lines[row] = before + lines[0]
+
+        newLines := make([]string, len(b.lines)+len(lines)-1)
+        copy(newLines, b.lines[:row+1])
+        
+        for i := 1; i < len(lines)-1; i++ {
+            newLines[row+i] = lines[i]
+        }
+        
+        newLines[row+len(lines)-1] = lines[len(lines)-1] + after
+        copy(newLines[row+len(lines):], b.lines[row+1:])
+        b.lines = newLines
+    }
+
+    b.modified = true
+}
+
+For single-line text, we use simple string concatenation. For multi-line text, 
+we pre-allocate a slice of the correct size and use copy to efficiently move 
+existing lines into the new slice. This minimizes memory allocations.
+
+Lazy Rendering
+The editor only renders visible portions of the file:
+
+for y := 0; y < e.height; y++ {
+    row := y + tab.offsetRow
+    screenY := y + 1
+    
+    if screenY < 0 || screenY >= e.height+3 {
+        continue
+    }
+    
+    if row >= tab.buffer.LineCount() {
+        e.drawString(0, screenY, "~", 
+                    tcell.StyleDefault.Foreground(tcell.ColorBlue))
+        continue
+    }
+
+    line := tab.buffer.GetLine(row)
+    e.drawString(0, screenY, line, tcell.StyleDefault)
+}
+
+We only iterate through the lines that fit on the screen (e.height lines). For 
+each screen line, we calculate which buffer line it corresponds to by adding 
+the vertical offset. If that line is beyond the end of the file, we draw a 
+tilde to indicate empty space.
+
+This approach means that rendering time is constant regardless of file size. A 
+file with ten lines renders just as fast as a file with ten million lines 
+because we only render what is visible.
+
+Efficient Tab Switching
+When switching tabs, we do not need to reload anything because each tab 
+maintains its own state:
+
+func (tm *TabManager) NextTab() {
+    if len(tm.tabs) == 0 {
+        return
+    }
+    tm.activeTab = (tm.activeTab + 1) % len(tm.tabs)
+}
+
+This is an O(1) operation that just updates an index. The next render cycle 
+will automatically display the new active tab's content.
+
+Buffered I/O
+File loading uses buffered I/O for better performance:
+
+func (b *Buffer) Load() error {
+    file, err := os.Open(b.filename)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    b.lines = []string{}
+    scanner := bufio.NewScanner(file)
+    
+    const maxCapacity = 1024 * 1024
+    buf := make([]byte, maxCapacity)
+    scanner.Buffer(buf, maxCapacity)
+
+    for scanner.Scan() {
+        b.lines = append(b.lines, scanner.Text())
+    }
+
+    if err := scanner.Err(); err != nil {
+        return err
+    }
+
+    if len(b.lines) == 0 {
+        b.lines = []string{""}
+    }
+
+    b.modified = false
+    return nil
+}
+
+The bufio.Scanner reads the file in chunks rather than byte by byte, which is 
+much more efficient. We configure it with a one-megabyte buffer to handle long 
+lines without reallocation.
+
+File saving also uses buffered I/O:
+
+file, err := os.Create(tempFile)
+if err != nil {
+    return err
+}
+
+writer := bufio.NewWriter(file)
+for i, line := range b.lines {
+    if i > 0 {
+        if _, err := writer.WriteString("\n"); err != nil {
+            file.Close()
+            os.Remove(tempFile)
+            return err
+        }
+    }
+    if _, err := writer.WriteString(line); err != nil {
+        file.Close()
+        os.Remove(tempFile)
+        return err
+    }
+}
+
+if err := writer.Flush(); err != nil {
+    file.Close()
+    os.Remove(tempFile)
+    return err
+}
+
+The buffered writer accumulates writes in memory and flushes them to disk in 
+larger chunks, reducing the number of system calls and improving performance.
+
+Memory Management
+We limit the undo stack to prevent unbounded memory growth:
+
+func (b *Buffer) SaveState(cursorRow, cursorCol int) {
+    linesCopy := make([]string, len(b.lines))
+    copy(linesCopy, b.lines)
+
+    state := BufferState{
+        lines:     linesCopy,
+        cursorRow: cursorRow,
+        cursorCol: cursorCol,
+    }
+
+    b.undoStack = append(b.undoStack, state)
+    if len(b.undoStack) > maxUndoLevels {
+        b.undoStack = b.undoStack[1:]
+    }
+
+    b.redoStack = b.redoStack[:0]
+}
+
+When the undo stack exceeds fifty levels, we remove the oldest state. This 
+ensures that memory usage is bounded even during long editing sessions with 
+many changes.
+
+================================================================================
+10. TESTING AND VALIDATION
+================================================================================
+Thorough testing is essential to ensure the upgrade from Version 1 to Version 2 
+is successful and that all new features work correctly.
+
+Unit Testing Strategy
+Each component should have unit tests that verify its behavior in isolation. 
+For example, testing the Buffer component:
+
+func TestBufferInsertChar(t *testing.T) {
+    b, _ := NewBuffer("")
+    b.InsertChar(0, 0, 'H')
+    b.InsertChar(0, 1, 'i')
+    
+    if b.GetLine(0) != "Hi" {
+        t.Errorf("Expected 'Hi', got '%s'", b.GetLine(0))
+    }
+}
+
+func TestBufferDeleteChar(t *testing.T) {
+    b, _ := NewBuffer("")
+    b.lines[0] = "Hello"
+    b.DeleteChar(0, 5)
+    
+    if b.GetLine(0) != "Hell" {
+        t.Errorf("Expected 'Hell', got '%s'", b.GetLine(0))
+    }
+}
+
+func TestBufferUndo(t *testing.T) {
+    b, _ := NewBuffer("")
+    b.SaveState(0, 0)
+    b.InsertChar(0, 0, 'X')
+    
+    row, col, ok := b.Undo()
+    if !ok {
+        t.Error("Undo should succeed")
+    }
+    if b.GetLine(0) != "" {
+        t.Errorf("Expected empty line after undo, got '%s'", 
+                b.GetLine(0))
+    }
+}
+
+These tests verify that the basic buffer operations work correctly. They test 
+normal cases, edge cases (like deleting from an empty line), and the undo 
+functionality.
+
+Integration Testing
+Integration tests verify that components work together correctly:
+
+func TestTabManagerAddAndSwitch(t *testing.T) {
+    tm := NewTabManager()
+    
+    err := tm.AddTab("test1.txt")
+    if err != nil {
+        t.Fatalf("Failed to add first tab: %v", err)
+    }
+    
+    err = tm.AddTab("test2.txt")
+    if err != nil {
+        t.Fatalf("Failed to add second tab: %v", err)
+    }
+    
+    if tm.GetTabCount() != 2 {
+        t.Errorf("Expected 2 tabs, got %d", tm.GetTabCount())
+    }
+    
+    tm.NextTab()
+    if tm.activeTab != 0 {
+        t.Errorf("Expected to wrap to tab 0, got %d", tm.activeTab)
+    }
+}
+
+This test verifies that the TabManager correctly manages multiple tabs and that 
+tab switching works as expected.
+
+Manual Testing Checklist
+In addition to automated tests, manual testing is important for verifying the 
+user experience. Here is a comprehensive checklist:
+
+File Operations:
+
+Create a new file and verify it appears as "[No Name]" in the tab bar
+Type some text and verify the modification indicator "[+]" appears
+Save the file and verify the indicator disappears
+Close the file and verify the tab is removed
+Open multiple files and verify they all appear in the tab bar
+Switch between tabs and verify each maintains its own content and cursor
+
+Editing Operations:
+
+Type text and verify it appears at the cursor position
+Use backspace and delete keys and verify characters are removed correctly
+Press Enter and verify new lines are created
+Use arrow keys and verify cursor movement
+Use Home and End keys and verify cursor moves to line boundaries
+Use Ctrl-Home and Ctrl-End and verify cursor moves to file boundaries
+Use Page Up and Page Down and verify scrolling works
+
+Clipboard Operations:
+
+Copy text with Ctrl-A and paste it into another application
+Copy a line with Ctrl-C and paste it into another application
+Cut a line with Ctrl-X and verify it is removed from the editor
+Paste text with Ctrl-V and verify it appears at the cursor
+Copy text from another application and paste it into the editor
+
+Undo and Redo:
+
+Make several edits and press Ctrl-Z to undo them
+Verify each undo restores the previous state
+Press Ctrl-Y to redo and verify the changes are reapplied
+Make a new edit after undoing and verify the redo stack is cleared
+
+Search Functionality:
+
+Press Ctrl-F and enter a search term
+Verify the cursor moves to the first occurrence
+Search again and verify it finds the next occurrence
+Search for text that does not exist and verify an appropriate message appears
+
+Go to Line:
+
+Press Ctrl-G and enter a line number
+Verify the cursor moves to that line
+Enter an invalid line number and verify an error message appears
+
+AI Features:
+
+Ensure Ollama is running
+Press Ctrl-L and enter a prompt
+Verify the status bar shows processing feedback
+Wait for the response and verify it appears in the status message
+Press Ctrl-K and verify the response is inserted at the cursor
+Try the same with streaming enabled and verify chunks appear in real-time
+Press Escape during a request and verify it is cancelled
+
+Error Handling:
+
+Try to save a file to a directory where you do not have write permission
+Verify an appropriate error message appears
+Try to use AI features when Ollama is not running
+Verify the error message explains how to start Ollama
+Try to use a model that is not installed
+Verify the error message lists available models
+
+Performance Testing
+Performance testing ensures the editor remains responsive with large files:
+Create a test file with one million lines:
+
+for i := 0; i < 1000000; i++ {
+    fmt.Fprintf(file, "Line %d: This is a test line with some content\n", i)
+}
+
+Open this file in the editor and verify:
+
+The editor starts quickly (within a few seconds)
+Scrolling is smooth and responsive
+Cursor movement is instantaneous
+Searching completes in reasonable time
+Saving completes without hanging
+
+Test with multiple large files open:
+
+Open ten files of one hundred thousand lines each
+Switch between tabs and verify no lag
+Edit in different tabs and verify changes are isolated
+Close tabs and verify memory is released
+
+Stress Testing
+Stress testing pushes the editor to its limits to find breaking points:
+AI Stress Test:
+
+Make multiple AI requests in quick succession
+Verify the editor prevents concurrent requests
+Cancel requests repeatedly and verify no crashes occur
+Use very long prompts and verify they are handled correctly
+
+Tab Stress Test:
+
+Open fifty tabs
+Switch between them rapidly
+Close tabs in random order
+Verify no memory leaks or crashes
+
+Clipboard Stress Test:
+
+Copy very large amounts of text (megabytes)
+Verify the clipboard operation completes
+Paste the text and verify it appears correctly
+Try clipboard operations when utilities are not installed
+
+================================================================================
+11. CONCLUSION AND FUTURE ENHANCEMENTS
+================================================================================
+The upgrade from GoEdit Version 1 to Version 2 represents a significant 
+evolution in capabilities and architecture. We have transformed a simple 
+single-file editor into a powerful multi-file development tool with AI 
+integration and advanced features.
+
+Summary of Major Changes
+The key enhancements in Version 2 include:
+Multi-Tab Support: Users can now edit multiple files simultaneously, with each 
+tab maintaining its own buffer, cursor position, and undo history. The tab bar 
+provides visual feedback about open files and their modification status.
+System Clipboard Integration: The editor now integrates with the system 
+clipboard on macOS, Linux, and Windows, allowing seamless copy and paste 
+between the editor and other applications. The implementation includes fallback 
+mechanisms to ensure clipboard functionality even when system utilities are 
+unavailable.
+
+AI Assistance: Integration with Ollama provides powerful AI capabilities 
+directly within the editor. Users can ask questions, get code suggestions, and 
+generate text without leaving their editing environment. Both standard and 
+streaming modes are supported for different use cases.
+Enhanced User Interface: The visual tab bar, improved status messages, and 
+better feedback for ongoing operations make the editor more intuitive and 
+easier to use. Color coding and visual indicators help users understand the 
+editor's state at a glance.
+
+Improved Reliability: Comprehensive error handling, thread safety mechanisms, 
+and defensive programming practices ensure the editor is robust and reliable. 
+The editor degrades gracefully when features are unavailable rather than 
+failing completely.
+
+Performance Optimizations: Efficient rendering, buffered I/O, and careful 
+memory management ensure the editor remains responsive even with large files 
+and many tabs open.
+
+Lessons Learned
+Several important lessons emerged during the upgrade process:
+Separation of Concerns: Breaking the monolithic Editor struct into separate 
+components (Buffer, Cursor, TabManager, ClipboardManager, OllamaClient) made 
+the code more maintainable and testable. Each component has a clear 
+responsibility and can be developed and tested independently.
+
+Thread Safety is Critical: Introducing concurrent operations for AI requests 
+and clipboard access required careful attention to thread safety. Using mutexes 
+to protect shared state and contexts for cancellation prevented race conditions 
+and ensured reliable operation.
+
+Graceful Degradation: Not all features are available in all environments. The 
+clipboard implementation falls back to an internal buffer when system utilities 
+are unavailable. AI features check for Ollama availability before attempting 
+requests. This approach ensures the editor remains useful even when some 
+features cannot work.
+
+User Feedback Matters: Providing clear, actionable feedback for all operations 
+significantly improves the user experience. Error messages that explain what 
+went wrong and how to fix it are much more valuable than generic errors.
+Performance Requires Attention: Even with modern hardware, performance matters. 
+Lazy rendering, efficient string operations, and buffered I/O ensure the editor 
+remains responsive with large files.
+
+Future Enhancement Opportunities
+While Version 2 is a significant improvement over Version 1, there are many 
+opportunities for further enhancement:
+
+Syntax Highlighting: Adding syntax highlighting for common programming 
+languages would make the editor more useful for software development. This 
+could be implemented using a tokenizer that identifies keywords, strings, 
+comments, and other language elements and applies different colors to each.
+Line Numbers: Displaying line numbers in the left margin would help users 
+navigate large files and reference specific lines. This would require adjusting 
+the rendering logic to reserve space for the line number column and updating 
+the cursor positioning to account for it.
+
+Split Panes: Allowing users to view two files side by side or view different 
+parts of the same file simultaneously would be valuable for comparing code or 
+referencing documentation while writing. This would require significant changes 
+to the rendering logic to support multiple viewports.
+
+Configuration File: Supporting a configuration file would allow users to 
+customize keyboard shortcuts, colors, default settings, and other preferences. 
+This could use a simple format like TOML or YAML for easy editing.
+
+Plugin System: A plugin system would allow users to extend the editor with 
+custom functionality without modifying the core code. This could use Go's 
+plugin package or a scripting language like Lua for better sandboxing.
+
+Multiple Cursors: Supporting multiple cursors would allow users to edit 
+multiple locations simultaneously, which is useful for repetitive edits. This 
+would require tracking multiple cursor positions and applying operations to 
+all of them.
+
+Git Integration: Showing git status in the tab bar (modified, untracked, etc.) 
+and providing commands for common git operations would make the editor more 
+useful for version-controlled projects.
+
+Language Server Protocol: Integrating with language servers would provide 
+features like autocomplete, go-to-definition, and inline error checking. This 
+would require implementing the LSP client protocol and managing communication 
+with language server processes.
+
+Fuzzy File Finder: A fuzzy file finder would allow users to quickly open files 
+by typing part of their name, similar to modern IDEs. This would require 
+implementing a fuzzy matching algorithm and a file tree traversal mechanism.
+Project-Wide Search: Searching across all files in a project would help users 
+find references and understand how code is used. This would require efficient 
+file scanning and result presentation.
+
+Migration Path for Existing Users
+Users upgrading from Version 1 to Version 2 should be aware of the following 
+changes:
+
+Command Line: Version 2 accepts multiple filenames on the command line, opening 
+each in a separate tab. Version 1 only accepted a single filename.
+Keyboard Shortcuts: Version 2 adds many new keyboard shortcuts for tab 
+management, clipboard operations, and AI features. The basic editing shortcuts 
+remain the same.
+
+Configuration: Version 2 adds command-line options for Ollama URL, model 
+selection, and streaming mode. These are optional and have sensible defaults.
+Dependencies: Version 2 requires the same dependencies as Version 1 (tcell), 
+but AI features require Ollama to be installed. Clipboard features work better 
+with system utilities installed but degrade gracefully without them.
+File Format: Version 2 uses the same file format as Version 1 (plain text with 
+newlines), so existing files work without modification.
+
+Contributing to GoEdit
+Developers interested in contributing to GoEdit should follow these guidelines:
+Code Style: Follow standard Go conventions. Run "go fmt" before committing. Add 
+comments for complex logic. Use meaningful variable and function names.
+Testing: Add unit tests for new functionality. Ensure existing tests pass 
+before submitting changes. Add integration tests for features that involve 
+multiple components.
+
+Documentation: Update the README and help text when adding features. Add 
+comments explaining design decisions and non-obvious code.
+Error Handling: Provide helpful error messages that explain what went wrong and 
+suggest fixes. Use defensive programming to prevent crashes.
+Performance: Consider performance implications of changes. Profile code if 
+adding potentially expensive operations. Avoid unnecessary allocations in hot 
+paths.
+
+Thread Safety: Protect shared state with mutexes. Use contexts for cancellation. 
+Avoid race conditions by carefully considering which goroutines access which 
+data.
+
+Final Thoughts
+The upgrade from GoEdit Version 1 to Version 2 demonstrates how a simple 
+application can evolve into a powerful tool through careful design and 
+incremental enhancement. By separating concerns, adding features thoughtfully, 
+and maintaining code quality, we created an editor that is both powerful and 
+maintainable.
+
+The modular architecture makes it easy to add new features without disrupting 
+existing functionality. The comprehensive error handling and thread safety 
+mechanisms ensure reliability. The performance optimizations keep the editor 
+responsive even with large files.
+
+Most importantly, the editor remains true to its original vision: a simple, 
+lightweight text editor that runs in the terminal. The new features enhance 
+this vision rather than replacing it. Users who want a simple editor can ignore 
+the advanced features. Users who need more power have it available.
+This tutorial has walked through each major enhancement in detail, explaining 
+not just what changed but why and how. By understanding these changes, 
+developers can apply similar patterns to their own projects and contribute to 
+GoEdit's continued evolution.
+
+The future of GoEdit is bright, with many opportunities for further enhancement. 
+Whether you are a user, a contributor, or just someone interested in terminal 
+application development, we hope this tutorial has provided valuable insights 
+into building robust, feature-rich software in Go.
+================================================================================
+                              END OF TUTORIAL
+================================================================================
+                Copyright (C) Prof. Dr. Michael Stal, 2025
+                          All Rights Reserved
