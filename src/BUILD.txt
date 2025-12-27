@@ -19,5 +19,8 @@ Complete File List
 5. ollama.go - AI integration with streaming
 6. main.go - Main editor logic and UI
 
-GoEdit v2.0 Copyright © Prof. Dr. Michael Stal, 2025 All Rights Reserved
+GoEdit v2.0 
+Copyright © Prof. Dr. Michael Stal, 2025
+All Rights Reserved
                         
+published wit M.I.T License
