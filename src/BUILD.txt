@@ -23,4 +23,4 @@ GoEdit v2.0 
 Copyright © Prof. Dr. Michael Stal, 2025
 All Rights Reserved
                         
-published wit M.I.T License
+published with M.I.T License
