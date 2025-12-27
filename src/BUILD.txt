@@ -1,0 +1,23 @@
+Build Instructions
+# Initialize Go module
+go mod init goedit
+
+# Get dependencies
+go get github.com/gdamore/tcell/v2
+
+# Build the editor
+go build -o goedit
+
+# Run
+./goedit myfile.txt
+
+Complete File List
+1. cursor.go - Cursor position management
+2. buffer.go - Text buffer with undo/redo
+3. clipboard.go - OS clipboard integration
+4. tabs.go - Multi-file tab management
+5. ollama.go - AI integration with streaming
+6. main.go - Main editor logic and UI
+
+GoEdit v2.0 Copyright © Prof. Dr. Michael Stal, 2025 All Rights Reserved
+                        

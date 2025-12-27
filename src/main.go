@@ -1,3 +1,8 @@
+
+// GoEdit v2.0
+// Copyright © Prof. Dr. Michael Stal, 2025
+// All rights reserved.
+
 package main
 
 import (
@@ -13,28 +18,28 @@ import (
     "github.com/gdamore/tcell/v2"
 )
 
-const version = "1.0.0"
+const version = "2.0.0"
 
 type Editor struct {
-    screen       tcell.Screen
-    buffer       *Buffer
-    cursor       *Cursor
-    offsetRow    int
-    offsetCol    int
-    width        int
-    height       int
-    statusMsg    string
-    mode         EditorMode
-    findQuery    string
-    clipboard    string
-    llmClient    *OllamaClient
-    llmPrompt    string
-    llmResponse  string
-    inputBuffer  string
-    quitAttempts int
-    aiMutex      sync.Mutex
-    aiInProgress bool
-    aiCancel     chan bool
+    screen         tcell.Screen
+    tabManager     *TabManager
+    clipboard      *ClipboardManager
+    width          int
+    height         int
+    statusMsg      string
+    statusMsgMutex sync.RWMutex
+    mode           EditorMode
+    findQuery      string
+    llmClient      *OllamaClient
+    llmPrompt      string
+    llmResponse    string
+    llmMutex       sync.RWMutex
+    inputBuffer    string
+    quitAttempts   int
+    aiMutex        sync.Mutex
+    aiInProgress   bool
+    aiCancel       chan bool
+    streamEnabled  bool
 }
 
 type EditorMode int
@@ -47,7 +52,7 @@ const (
     ModeFilename
 )
 
-func NewEditor(filename, ollamaURL, model string) (*Editor, error) {
+func NewEditor(filenames []string, ollamaURL, model string, streamEnabled bool) (*Editor, error) {
     screen, err := tcell.NewScreen()
     if err != nil {
         return nil, fmt.Errorf("failed to create screen: %w", err)
@@ -61,30 +66,71 @@ func NewEditor(filename, ollamaURL, model string) (*Editor, error) {
     screen.EnablePaste()
     screen.Clear()
 
-    buffer, err := NewBuffer(filename)
-    if err != nil {
+    width, height := screen.Size()
+    if height < 5 {
         screen.Fini()
-        return nil, fmt.Errorf("failed to create buffer: %w", err)
+        return nil, fmt.Errorf("terminal too small (need at least 5 lines)")
     }
 
-    width, height := screen.Size()
-    if height < 3 {
-        screen.Fini()
-        return nil, fmt.Errorf("terminal too small (need at least 3 lines)")
+    tabManager := NewTabManager()
+    
+    if len(filenames) == 0 {
+        if err := tabManager.AddTab(""); err != nil {
+            screen.Fini()
+            return nil, fmt.Errorf("failed to create initial tab: %w", err)
+        }
+    } else {
+        for _, filename := range filenames {
+            if err := tabManager.AddTab(filename); err != nil {
+                screen.Fini()
+                return nil, fmt.Errorf("failed to open %s: %w", filename, err)
+            }
+        }
     }
 
     return &Editor{
-        screen:       screen,
-        buffer:       buffer,
-        cursor:       NewCursor(),
-        width:        width,
-        height:       height - 2,
-        statusMsg:    "Ctrl+Q: Quit | Ctrl+S: Save | Ctrl+L: AI | Ctrl+F: Find",
-        mode:         ModeNormal,
-        llmClient:    NewOllamaClient(ollamaURL, model),
-        aiInProgress: false,
-        aiCancel:     make(chan bool, 1),
+        screen:        screen,
+        tabManager:    tabManager,
+        clipboard:     NewClipboardManager(),
+        width:         width,
+        height:        height - 3,
+        statusMsg:     "Ctrl+Q: Quit | Ctrl+S: Save | Ctrl+L: AI | Ctrl+T: New Tab | Tab: Next",
+        mode:          ModeNormal,
+        llmClient:     NewOllamaClient(ollamaURL, model),
+        aiInProgress:  false,
+        aiCancel:      make(chan bool, 1),
+        streamEnabled: streamEnabled,
     }, nil
+}
+
+func (e *Editor) setStatusMsg(msg string) {
+    e.statusMsgMutex.Lock()
+    e.statusMsg = msg
+    e.statusMsgMutex.Unlock()
+}
+
+func (e *Editor) getStatusMsg() string {
+    e.statusMsgMutex.RLock()
+    defer e.statusMsgMutex.RUnlock()
+    return e.statusMsg
+}
+
+func (e *Editor) setLLMResponse(response string) {
+    e.llmMutex.Lock()
+    e.llmResponse = response
+    e.llmMutex.Unlock()
+}
+
+func (e *Editor) getLLMResponse() string {
+    e.llmMutex.RLock()
+    defer e.llmMutex.RUnlock()
+    return e.llmResponse
+}
+
+func (e *Editor) appendLLMResponse(chunk string) {
+    e.llmMutex.Lock()
+    e.llmResponse += chunk
+    e.llmMutex.Unlock()
 }
 
 func (e *Editor) checkOllamaSetup() error {
@@ -126,10 +172,10 @@ func (e *Editor) handleEvent(ev tcell.Event) bool {
     switch ev := ev.(type) {
     case *tcell.EventResize:
         e.width, e.height = ev.Size()
-        if e.height < 3 {
-            e.height = 3
+        if e.height < 5 {
+            e.height = 5
         }
-        e.height -= 2
+        e.height -= 3
         e.screen.Sync()
         return true
 
@@ -142,7 +188,7 @@ func (e *Editor) handleEvent(ev tcell.Event) bool {
                 default:
                 }
                 e.aiInProgress = false
-                e.statusMsg = "AI request cancelled"
+                e.setStatusMsg("AI request cancelled")
                 e.aiMutex.Unlock()
                 if e.mode == ModeLLM {
                     e.mode = ModeNormal
@@ -178,6 +224,11 @@ func (e *Editor) handleKey(ev *tcell.EventKey) bool {
 }
 
 func (e *Editor) handleNormalMode(ev *tcell.EventKey) bool {
+    tab := e.tabManager.GetActiveTab()
+    if tab == nil || tab.buffer == nil || tab.cursor == nil {
+        return true
+    }
+
     mod := ev.Modifiers()
 
     switch ev.Key() {
@@ -187,267 +238,321 @@ func (e *Editor) handleNormalMode(ev *tcell.EventKey) bool {
         e.aiMutex.Unlock()
 
         if inProgress {
-            e.statusMsg = "AI in progress. Press Esc to cancel, then Ctrl+Q to quit"
+            e.setStatusMsg("AI in progress. Press Esc to cancel, then Ctrl+Q to quit")
             return true
         }
 
-        if e.buffer.modified && e.quitAttempts == 0 {
-            e.statusMsg = "File modified! Press Ctrl+Q again to quit, Ctrl+S to save"
+        if tab.buffer.modified && e.quitAttempts == 0 {
+            e.setStatusMsg("File modified! Press Ctrl+Q again to quit, Ctrl+S to save")
             e.quitAttempts++
             return true
         }
+        
+        for i := 0; i < e.tabManager.GetTabCount(); i++ {
+            t := e.tabManager.tabs[i]
+            if t != nil && t.buffer != nil && t.buffer.modified {
+                e.setStatusMsg(fmt.Sprintf("Tab %d has unsaved changes! Save all or press Ctrl+Q again", i+1))
+                if e.quitAttempts == 0 {
+                    e.quitAttempts++
+                    return true
+                }
+            }
+        }
+        
         return false
 
     case tcell.KeyCtrlS:
         e.quitAttempts = 0
         e.saveFile()
 
+    case tcell.KeyCtrlT:
+        if err := e.tabManager.AddTab(""); err != nil {
+            e.setStatusMsg(fmt.Sprintf("Failed to create new tab: %v", err))
+        } else {
+            e.setStatusMsg(fmt.Sprintf("New tab created (Tab %d)", e.tabManager.GetTabCount()))
+        }
+
+    case tcell.KeyCtrlW:
+        if e.tabManager.CloseTab() {
+            e.setStatusMsg("Cannot close last tab")
+        } else {
+            e.setStatusMsg(fmt.Sprintf("Tab closed (now at Tab %d)", e.tabManager.activeTab+1))
+        }
+
+    case tcell.KeyTab:
+        if mod&tcell.ModShift != 0 {
+            e.tabManager.PrevTab()
+        } else {
+            e.tabManager.NextTab()
+        }
+        newTab := e.tabManager.GetActiveTab()
+        if newTab != nil && newTab.buffer != nil {
+            filename := newTab.buffer.filename
+            if filename == "" {
+                filename = "[No Name]"
+            } else {
+                filename = filepath.Base(filename)
+            }
+            e.setStatusMsg(fmt.Sprintf("Switched to: %s (Tab %d/%d)", 
+                filename, e.tabManager.activeTab+1, e.tabManager.GetTabCount()))
+        }
+
     case tcell.KeyCtrlF:
         e.mode = ModeFind
         e.inputBuffer = ""
-        e.statusMsg = "Find: "
+        e.setStatusMsg("Find: ")
 
     case tcell.KeyCtrlG:
         e.mode = ModeGoto
         e.inputBuffer = ""
-        e.statusMsg = "Go to line: "
+        e.setStatusMsg("Go to line: ")
 
     case tcell.KeyCtrlL:
         if err := e.checkOllamaSetup(); err != nil {
-            e.statusMsg = fmt.Sprintf("AI unavailable: %v", err)
+            e.setStatusMsg(fmt.Sprintf("AI unavailable: %v", err))
             return true
         }
         e.mode = ModeLLM
         e.inputBuffer = ""
-        e.statusMsg = "Ask AI: "
+        if e.streamEnabled {
+            e.setStatusMsg("Ask AI (streaming): ")
+        } else {
+            e.setStatusMsg("Ask AI: ")
+        }
 
     case tcell.KeyCtrlK:
-        if e.llmResponse != "" {
-            oldRow := e.cursor.Row
-            oldCol := e.cursor.Col
-            e.buffer.InsertText(e.cursor.Row, e.cursor.Col, e.llmResponse)
+        response := e.getLLMResponse()
+        if response != "" {
+            oldRow := tab.cursor.Row
+            oldCol := tab.cursor.Col
+            tab.buffer.InsertText(tab.cursor.Row, tab.cursor.Col, response)
 
-            lines := strings.Split(e.llmResponse, "\n")
+            lines := strings.Split(response, "\n")
             if len(lines) > 1 {
-                e.cursor.Row = oldRow + len(lines) - 1
-                if e.cursor.Row < 0 {
-                    e.cursor.Row = 0
+                tab.cursor.Row = oldRow + len(lines) - 1
+                if tab.cursor.Row < 0 {
+                    tab.cursor.Row = 0
                 }
-                lastLine := lines[len(lines)-1]
-                e.cursor.Col = len(lastLine)
+                if len(lines) > 0 {
+                    lastLine := lines[len(lines)-1]
+                    tab.cursor.Col = len(lastLine)
+                }
             } else {
-                e.cursor.Col = oldCol + len(e.llmResponse)
+                tab.cursor.Col = oldCol + len(response)
             }
 
-            e.ensureCursorValid()
-            e.buffer.SaveState(e.cursor.Row, e.cursor.Col)
-            e.statusMsg = "AI response inserted at cursor"
+            e.ensureCursorValid(tab)
+            tab.buffer.SaveState(tab.cursor.Row, tab.cursor.Col)
+            e.setStatusMsg("AI response inserted at cursor")
         } else {
-            e.statusMsg = "No AI response available. Use Ctrl+L to ask AI first"
+            e.setStatusMsg("No AI response available. Use Ctrl+L to ask AI first")
         }
 
     case tcell.KeyCtrlA:
-        e.clipboard = e.buffer.GetText()
-        e.statusMsg = "All text copied to clipboard"
+        text := tab.buffer.GetText()
+        e.clipboard.Copy(text)
+        e.setStatusMsg("All text copied to system clipboard")
 
     case tcell.KeyCtrlC:
-        if e.cursor.Row >= 0 && e.cursor.Row < e.buffer.LineCount() {
-            line := e.buffer.GetLine(e.cursor.Row)
-            e.clipboard = line
-            e.statusMsg = "Current line copied to clipboard"
+        if tab.cursor.Row >= 0 && tab.cursor.Row < tab.buffer.LineCount() {
+            line := tab.buffer.GetLine(tab.cursor.Row)
+            e.clipboard.Copy(line)
+            e.setStatusMsg("Current line copied to system clipboard")
         }
 
     case tcell.KeyCtrlX:
-        if e.cursor.Row >= 0 && e.cursor.Row < e.buffer.LineCount() {
-            line := e.buffer.GetLine(e.cursor.Row)
-            e.clipboard = line
-            e.buffer.DeleteLine(e.cursor.Row)
-            if e.cursor.Row >= e.buffer.LineCount() && e.cursor.Row > 0 {
-                e.cursor.Row--
+        if tab.cursor.Row >= 0 && tab.cursor.Row < tab.buffer.LineCount() {
+            line := tab.buffer.GetLine(tab.cursor.Row)
+            e.clipboard.Copy(line)
+            tab.buffer.DeleteLine(tab.cursor.Row)
+            if tab.cursor.Row >= tab.buffer.LineCount() && tab.cursor.Row > 0 {
+                tab.cursor.Row--
             }
-            e.cursor.Col = 0
-            e.ensureCursorValid()
-            e.buffer.SaveState(e.cursor.Row, e.cursor.Col)
-            e.statusMsg = "Current line cut to clipboard"
+            tab.cursor.Col = 0
+            e.ensureCursorValid(tab)
+            tab.buffer.SaveState(tab.cursor.Row, tab.cursor.Col)
+            e.setStatusMsg("Current line cut to system clipboard")
         }
 
     case tcell.KeyCtrlV:
-        if e.clipboard != "" {
-            oldRow := e.cursor.Row
-            oldCol := e.cursor.Col
-            e.buffer.InsertText(e.cursor.Row, e.cursor.Col, e.clipboard)
+        text, err := e.clipboard.Paste()
+        if err == nil && text != "" {
+            oldRow := tab.cursor.Row
+            oldCol := tab.cursor.Col
+            tab.buffer.InsertText(tab.cursor.Row, tab.cursor.Col, text)
 
-            lines := strings.Split(e.clipboard, "\n")
+            lines := strings.Split(text, "\n")
             if len(lines) > 1 {
-                e.cursor.Row = oldRow + len(lines) - 1
-                if e.cursor.Row < 0 {
-                    e.cursor.Row = 0
+                tab.cursor.Row = oldRow + len(lines) - 1
+                if tab.cursor.Row < 0 {
+                    tab.cursor.Row = 0
                 }
-                lastLine := lines[len(lines)-1]
-                e.cursor.Col = len(lastLine)
+                if len(lines) > 0 {
+                    lastLine := lines[len(lines)-1]
+                    tab.cursor.Col = len(lastLine)
+                }
             } else {
-                e.cursor.Col = oldCol + len(e.clipboard)
+                tab.cursor.Col = oldCol + len(text)
             }
 
-            e.ensureCursorValid()
-            e.buffer.SaveState(e.cursor.Row, e.cursor.Col)
-            e.statusMsg = "Clipboard content pasted"
+            e.ensureCursorValid(tab)
+            tab.buffer.SaveState(tab.cursor.Row, tab.cursor.Col)
+            e.setStatusMsg("System clipboard content pasted")
         } else {
-            e.statusMsg = "Clipboard is empty"
+            e.setStatusMsg("Clipboard is empty or unavailable")
         }
 
     case tcell.KeyCtrlZ:
-        if row, col, ok := e.buffer.Undo(); ok {
-            e.cursor.Row = row
-            e.cursor.Col = col
-            e.ensureCursorValid()
-            e.statusMsg = "Undo successful"
+        if row, col, ok := tab.buffer.Undo(); ok {
+            tab.cursor.Row = row
+            tab.cursor.Col = col
+            e.ensureCursorValid(tab)
+            e.setStatusMsg("Undo successful")
         } else {
-            e.statusMsg = "Nothing to undo"
+            e.setStatusMsg("Nothing to undo")
         }
 
     case tcell.KeyCtrlY:
-        if row, col, ok := e.buffer.Redo(); ok {
-            e.cursor.Row = row
-            e.cursor.Col = col
-            e.ensureCursorValid()
-            e.statusMsg = "Redo successful"
+        if row, col, ok := tab.buffer.Redo(); ok {
+            tab.cursor.Row = row
+            tab.cursor.Col = col
+            e.ensureCursorValid(tab)
+            e.setStatusMsg("Redo successful")
         } else {
-            e.statusMsg = "Nothing to redo"
+            e.setStatusMsg("Nothing to redo")
         }
 
     case tcell.KeyUp:
-        if e.cursor.Row > 0 {
-            e.cursor.Row--
-            e.ensureCursorValid()
+        if tab.cursor.Row > 0 {
+            tab.cursor.Row--
+            e.ensureCursorValid(tab)
         }
 
     case tcell.KeyDown:
-        if e.cursor.Row < e.buffer.LineCount()-1 {
-            e.cursor.Row++
-            e.ensureCursorValid()
+        if tab.cursor.Row < tab.buffer.LineCount()-1 {
+            tab.cursor.Row++
+            e.ensureCursorValid(tab)
         }
 
     case tcell.KeyLeft:
-        if e.cursor.Col > 0 {
-            e.cursor.Col--
-        } else if e.cursor.Row > 0 {
-            e.cursor.Row--
-            e.cursor.Col = len(e.buffer.GetLine(e.cursor.Row))
+        if tab.cursor.Col > 0 {
+            tab.cursor.Col--
+        } else if tab.cursor.Row > 0 {
+            tab.cursor.Row--
+            tab.cursor.Col = len(tab.buffer.GetLine(tab.cursor.Row))
         }
 
     case tcell.KeyRight:
-        lineLen := len(e.buffer.GetLine(e.cursor.Row))
-        if e.cursor.Col < lineLen {
-            e.cursor.Col++
-        } else if e.cursor.Row < e.buffer.LineCount()-1 {
-            e.cursor.Row++
-            e.cursor.Col = 0
+        lineLen := len(tab.buffer.GetLine(tab.cursor.Row))
+        if tab.cursor.Col < lineLen {
+            tab.cursor.Col++
+        } else if tab.cursor.Row < tab.buffer.LineCount()-1 {
+            tab.cursor.Row++
+            tab.cursor.Col = 0
         }
 
     case tcell.KeyHome:
         if mod&tcell.ModCtrl != 0 {
-            e.cursor.Row = 0
-            e.cursor.Col = 0
-            e.ensureCursorValid()
-            e.statusMsg = "Moved to start of file"
+            tab.cursor.Row = 0
+            tab.cursor.Col = 0
+            e.ensureCursorValid(tab)
+            e.setStatusMsg("Moved to start of file")
         } else {
-            e.cursor.Col = 0
+            tab.cursor.Col = 0
         }
 
     case tcell.KeyEnd:
         if mod&tcell.ModCtrl != 0 {
-            e.cursor.Row = e.buffer.LineCount() - 1
-            if e.cursor.Row < 0 {
-                e.cursor.Row = 0
+            tab.cursor.Row = tab.buffer.LineCount() - 1
+            if tab.cursor.Row < 0 {
+                tab.cursor.Row = 0
             }
-            e.cursor.Col = len(e.buffer.GetLine(e.cursor.Row))
-            e.ensureCursorValid()
-            e.statusMsg = "Moved to end of file"
+            tab.cursor.Col = len(tab.buffer.GetLine(tab.cursor.Row))
+            e.ensureCursorValid(tab)
+            e.setStatusMsg("Moved to end of file")
         } else {
-            e.cursor.Col = len(e.buffer.GetLine(e.cursor.Row))
+            tab.cursor.Col = len(tab.buffer.GetLine(tab.cursor.Row))
         }
 
     case tcell.KeyPgUp:
-        e.cursor.Row -= e.height
-        if e.cursor.Row < 0 {
-            e.cursor.Row = 0
+        tab.cursor.Row -= e.height
+        if tab.cursor.Row < 0 {
+            tab.cursor.Row = 0
         }
-        e.ensureCursorValid()
+        e.ensureCursorValid(tab)
 
     case tcell.KeyPgDn:
-        e.cursor.Row += e.height
-        if e.cursor.Row >= e.buffer.LineCount() {
-            e.cursor.Row = e.buffer.LineCount() - 1
+        tab.cursor.Row += e.height
+        if tab.cursor.Row >= tab.buffer.LineCount() {
+            tab.cursor.Row = tab.buffer.LineCount() - 1
         }
-        if e.cursor.Row < 0 {
-            e.cursor.Row = 0
+        if tab.cursor.Row < 0 {
+            tab.cursor.Row = 0
         }
-        e.ensureCursorValid()
+        e.ensureCursorValid(tab)
 
     case tcell.KeyEnter:
-        e.buffer.InsertNewline(e.cursor.Row, e.cursor.Col)
-        e.cursor.Row++
-        if e.cursor.Row < 0 {
-            e.cursor.Row = 0
+        tab.buffer.InsertNewline(tab.cursor.Row, tab.cursor.Col)
+        tab.cursor.Row++
+        if tab.cursor.Row < 0 {
+            tab.cursor.Row = 0
         }
-        e.cursor.Col = 0
-        e.ensureCursorValid()
-        e.buffer.SaveState(e.cursor.Row, e.cursor.Col)
+        tab.cursor.Col = 0
+        e.ensureCursorValid(tab)
+        tab.buffer.SaveState(tab.cursor.Row, tab.cursor.Col)
         e.quitAttempts = 0
 
     case tcell.KeyBackspace, tcell.KeyBackspace2:
-        if e.cursor.Col > 0 {
-            e.buffer.DeleteChar(e.cursor.Row, e.cursor.Col)
-            e.cursor.Col--
-        } else if e.cursor.Row > 0 {
-            prevLineLen := len(e.buffer.GetLine(e.cursor.Row - 1))
-            e.buffer.DeleteChar(e.cursor.Row, e.cursor.Col)
-            e.cursor.Row--
-            e.cursor.Col = prevLineLen
+        if tab.cursor.Col > 0 {
+            tab.buffer.DeleteChar(tab.cursor.Row, tab.cursor.Col)
+            tab.cursor.Col--
+        } else if tab.cursor.Row > 0 {
+            prevLineLen := len(tab.buffer.GetLine(tab.cursor.Row - 1))
+            tab.buffer.DeleteChar(tab.cursor.Row, tab.cursor.Col)
+            tab.cursor.Row--
+            tab.cursor.Col = prevLineLen
         }
-        e.ensureCursorValid()
-        e.buffer.SaveState(e.cursor.Row, e.cursor.Col)
+        e.ensureCursorValid(tab)
+        tab.buffer.SaveState(tab.cursor.Row, tab.cursor.Col)
         e.quitAttempts = 0
 
     case tcell.KeyDelete:
-        lineLen := len(e.buffer.GetLine(e.cursor.Row))
-        if e.cursor.Col < lineLen {
-            e.buffer.DeleteCharForward(e.cursor.Row, e.cursor.Col)
-        } else if e.cursor.Row < e.buffer.LineCount()-1 {
-            nextLine := e.buffer.GetLine(e.cursor.Row + 1)
-            e.buffer.AppendToLine(e.cursor.Row, nextLine)
-            e.buffer.DeleteLine(e.cursor.Row + 1)
+        lineLen := len(tab.buffer.GetLine(tab.cursor.Row))
+        if tab.cursor.Col < lineLen {
+            tab.buffer.DeleteCharForward(tab.cursor.Row, tab.cursor.Col)
+        } else if tab.cursor.Row < tab.buffer.LineCount()-1 {
+            nextLine := tab.buffer.GetLine(tab.cursor.Row + 1)
+            tab.buffer.AppendToLine(tab.cursor.Row, nextLine)
+            tab.buffer.DeleteLine(tab.cursor.Row + 1)
         }
-        e.ensureCursorValid()
-        e.buffer.SaveState(e.cursor.Row, e.cursor.Col)
-        e.quitAttempts = 0
-
-    case tcell.KeyTab:
-        for i := 0; i < 4; i++ {
-            e.buffer.InsertChar(e.cursor.Row, e.cursor.Col, ' ')
-            e.cursor.Col++
-        }
-        e.ensureCursorValid()
-        e.buffer.SaveState(e.cursor.Row, e.cursor.Col)
+        e.ensureCursorValid(tab)
+        tab.buffer.SaveState(tab.cursor.Row, tab.cursor.Col)
         e.quitAttempts = 0
 
     case tcell.KeyRune:
-        e.buffer.InsertChar(e.cursor.Row, e.cursor.Col, ev.Rune())
-        e.cursor.Col++
-        e.ensureCursorValid()
-        e.buffer.SaveState(e.cursor.Row, e.cursor.Col)
+        if ev.Rune() == '\t' {
+            for i := 0; i < 4; i++ {
+                tab.buffer.InsertChar(tab.cursor.Row, tab.cursor.Col, ' ')
+                tab.cursor.Col++
+            }
+        } else {
+            tab.buffer.InsertChar(tab.cursor.Row, tab.cursor.Col, ev.Rune())
+            tab.cursor.Col++
+        }
+        e.ensureCursorValid(tab)
+        tab.buffer.SaveState(tab.cursor.Row, tab.cursor.Col)
         e.quitAttempts = 0
     }
 
     return true
 }
 
+
 func (e *Editor) handleFindMode(ev *tcell.EventKey) bool {
     switch ev.Key() {
     case tcell.KeyEscape:
         e.mode = ModeNormal
-        e.statusMsg = "Search cancelled"
+        e.setStatusMsg("Search cancelled")
     case tcell.KeyEnter:
         e.findQuery = e.inputBuffer
         e.findText()
@@ -456,40 +561,45 @@ func (e *Editor) handleFindMode(ev *tcell.EventKey) bool {
         if len(e.inputBuffer) > 0 {
             e.inputBuffer = e.inputBuffer[:len(e.inputBuffer)-1]
         }
-        e.statusMsg = "Find: " + e.inputBuffer
+        e.setStatusMsg("Find: " + e.inputBuffer)
     case tcell.KeyRune:
         e.inputBuffer += string(ev.Rune())
-        e.statusMsg = "Find: " + e.inputBuffer
+        e.setStatusMsg("Find: " + e.inputBuffer)
     }
     return true
 }
 
 func (e *Editor) handleGotoMode(ev *tcell.EventKey) bool {
+    tab := e.tabManager.GetActiveTab()
+    if tab == nil || tab.buffer == nil || tab.cursor == nil {
+        return true
+    }
+
     switch ev.Key() {
     case tcell.KeyEscape:
         e.mode = ModeNormal
-        e.statusMsg = "Go to line cancelled"
+        e.setStatusMsg("Go to line cancelled")
     case tcell.KeyEnter:
         var lineNum int
         _, err := fmt.Sscanf(e.inputBuffer, "%d", &lineNum)
-        if err == nil && lineNum > 0 && lineNum <= e.buffer.LineCount() {
-            e.cursor.Row = lineNum - 1
-            e.cursor.Col = 0
-            e.ensureCursorValid()
-            e.statusMsg = fmt.Sprintf("Jumped to line %d", lineNum)
+        if err == nil && lineNum > 0 && lineNum <= tab.buffer.LineCount() {
+            tab.cursor.Row = lineNum - 1
+            tab.cursor.Col = 0
+            e.ensureCursorValid(tab)
+            e.setStatusMsg(fmt.Sprintf("Jumped to line %d", lineNum))
         } else {
-            e.statusMsg = "Invalid line number"
+            e.setStatusMsg("Invalid line number")
         }
         e.mode = ModeNormal
     case tcell.KeyBackspace, tcell.KeyBackspace2:
         if len(e.inputBuffer) > 0 {
             e.inputBuffer = e.inputBuffer[:len(e.inputBuffer)-1]
         }
-        e.statusMsg = "Go to line: " + e.inputBuffer
+        e.setStatusMsg("Go to line: " + e.inputBuffer)
     case tcell.KeyRune:
         if ev.Rune() >= '0' && ev.Rune() <= '9' {
             e.inputBuffer += string(ev.Rune())
-            e.statusMsg = "Go to line: " + e.inputBuffer
+            e.setStatusMsg("Go to line: " + e.inputBuffer)
         }
     }
     return true
@@ -499,74 +609,101 @@ func (e *Editor) handleLLMMode(ev *tcell.EventKey) bool {
     switch ev.Key() {
     case tcell.KeyEscape:
         e.mode = ModeNormal
-        e.statusMsg = "AI prompt cancelled"
+        e.setStatusMsg("AI prompt cancelled")
     case tcell.KeyEnter:
         e.llmPrompt = e.inputBuffer
-        e.askLLMAsync()
+        if e.streamEnabled {
+            e.askLLMStream()
+        } else {
+            e.askLLMAsync()
+        }
         e.mode = ModeNormal
     case tcell.KeyBackspace, tcell.KeyBackspace2:
         if len(e.inputBuffer) > 0 {
             e.inputBuffer = e.inputBuffer[:len(e.inputBuffer)-1]
         }
-        e.statusMsg = "Ask AI: " + e.inputBuffer
+        if e.streamEnabled {
+            e.setStatusMsg("Ask AI (streaming): " + e.inputBuffer)
+        } else {
+            e.setStatusMsg("Ask AI: " + e.inputBuffer)
+        }
     case tcell.KeyRune:
         e.inputBuffer += string(ev.Rune())
-        e.statusMsg = "Ask AI: " + e.inputBuffer
+        if e.streamEnabled {
+            e.setStatusMsg("Ask AI (streaming): " + e.inputBuffer)
+        } else {
+            e.setStatusMsg("Ask AI: " + e.inputBuffer)
+        }
     }
     return true
 }
 
 func (e *Editor) handleFilenameMode(ev *tcell.EventKey) bool {
+    tab := e.tabManager.GetActiveTab()
+    if tab == nil || tab.buffer == nil {
+        return true
+    }
+
     switch ev.Key() {
     case tcell.KeyEscape:
         e.mode = ModeNormal
-        e.statusMsg = "Save cancelled"
+        e.setStatusMsg("Save cancelled")
     case tcell.KeyEnter:
-        e.buffer.filename = e.inputBuffer
+        tab.buffer.filename = e.inputBuffer
         e.saveFile()
         e.mode = ModeNormal
     case tcell.KeyBackspace, tcell.KeyBackspace2:
         if len(e.inputBuffer) > 0 {
             e.inputBuffer = e.inputBuffer[:len(e.inputBuffer)-1]
         }
-        e.statusMsg = "Filename: " + e.inputBuffer
+        e.setStatusMsg("Filename: " + e.inputBuffer)
     case tcell.KeyRune:
         e.inputBuffer += string(ev.Rune())
-        e.statusMsg = "Filename: " + e.inputBuffer
+        e.setStatusMsg("Filename: " + e.inputBuffer)
     }
     return true
 }
 
 func (e *Editor) saveFile() {
-    if e.buffer.filename == "" {
-        e.mode = ModeFilename
-        e.inputBuffer = ""
-        e.statusMsg = "Enter filename: "
+    tab := e.tabManager.GetActiveTab()
+    if tab == nil || tab.buffer == nil {
         return
     }
 
-    if err := e.buffer.Save(); err != nil {
-        e.statusMsg = fmt.Sprintf("Save failed: %v", err)
+    if tab.buffer.filename == "" {
+        e.mode = ModeFilename
+        e.inputBuffer = ""
+        e.setStatusMsg("Enter filename: ")
+        return
+    }
+
+    if err := tab.buffer.Save(); err != nil {
+        e.setStatusMsg(fmt.Sprintf("Save failed: %v", err))
     } else {
-        basename := filepath.Base(e.buffer.filename)
-        e.statusMsg = fmt.Sprintf("Saved '%s' (%d lines)", basename, e.buffer.LineCount())
+        basename := filepath.Base(tab.buffer.filename)
+        e.setStatusMsg(fmt.Sprintf("Saved '%s' (%d lines)", basename, tab.buffer.LineCount()))
     }
 }
 
 func (e *Editor) findText() {
+    tab := e.tabManager.GetActiveTab()
+    if tab == nil || tab.buffer == nil || tab.cursor == nil {
+        return
+    }
+
     if e.findQuery == "" {
-        e.statusMsg = "No search query entered"
+        e.setStatusMsg("No search query entered")
         return
     }
 
-    totalLines := e.buffer.LineCount()
+    totalLines := tab.buffer.LineCount()
     if totalLines == 0 {
-        e.statusMsg = "Buffer is empty"
+        e.setStatusMsg("Buffer is empty")
         return
     }
 
-    startRow := e.cursor.Row
-    startCol := e.cursor.Col + 1
+    startRow := tab.cursor.Row
+    startCol := tab.cursor.Col + 1
 
     if startRow < 0 {
         startRow = 0
@@ -577,7 +714,7 @@ func (e *Editor) findText() {
 
     for i := 0; i < totalLines; i++ {
         row := (startRow + i) % totalLines
-        line := e.buffer.GetLine(row)
+        line := tab.buffer.GetLine(row)
 
         searchFrom := 0
         if row == startRow && i == 0 {
@@ -593,27 +730,27 @@ func (e *Editor) findText() {
         idx := strings.Index(lowerLine, lowerQuery)
 
         if idx != -1 {
-            e.cursor.Row = row
-            e.cursor.Col = searchFrom + idx
-            e.ensureCursorValid()
-            e.statusMsg = fmt.Sprintf("Found '%s' at line %d, column %d", e.findQuery, row+1, e.cursor.Col+1)
+            tab.cursor.Row = row
+            tab.cursor.Col = searchFrom + idx
+            e.ensureCursorValid(tab)
+            e.setStatusMsg(fmt.Sprintf("Found '%s' at line %d, column %d", e.findQuery, row+1, tab.cursor.Col+1))
             return
         }
     }
 
-    e.statusMsg = fmt.Sprintf("'%s' not found in document", e.findQuery)
+    e.setStatusMsg(fmt.Sprintf("'%s' not found in document", e.findQuery))
 }
 
 func (e *Editor) askLLMAsync() {
     if e.llmPrompt == "" {
-        e.statusMsg = "No prompt entered"
+        e.setStatusMsg("No prompt entered")
         return
     }
 
     e.aiMutex.Lock()
     if e.aiInProgress {
         e.aiMutex.Unlock()
-        e.statusMsg = "AI request already in progress. Press Esc to cancel current request"
+        e.setStatusMsg("AI request already in progress. Press Esc to cancel current request")
         return
     }
     e.aiInProgress = true
@@ -622,24 +759,24 @@ func (e *Editor) askLLMAsync() {
     if !e.llmClient.IsAvailable() {
         e.aiMutex.Lock()
         e.aiInProgress = false
-        e.statusMsg = "Cannot connect to Ollama. Is it running? Try: ollama serve"
         e.aiMutex.Unlock()
+        e.setStatusMsg("Cannot connect to Ollama. Is it running? Try: ollama serve")
         return
     }
 
     if err := e.llmClient.CheckModel(); err != nil {
         e.aiMutex.Lock()
         e.aiInProgress = false
+        e.aiMutex.Unlock()
         errMsg := err.Error()
         if len(errMsg) > 80 {
             errMsg = errMsg[:77] + "..."
         }
-        e.statusMsg = fmt.Sprintf("Model error: %s", errMsg)
-        e.aiMutex.Unlock()
+        e.setStatusMsg(fmt.Sprintf("Model error: %s", errMsg))
         return
     }
 
-    e.statusMsg = "Processing AI request... (Press Esc to cancel)"
+    e.setStatusMsg("Processing AI request... (Press Esc to cancel)")
 
     go func() {
         prompt := e.llmPrompt
@@ -664,38 +801,37 @@ func (e *Editor) askLLMAsync() {
         }
 
         e.aiMutex.Lock()
-        defer e.aiMutex.Unlock()
-
         e.aiInProgress = false
+        e.aiMutex.Unlock()
 
         if err != nil {
             errMsg := err.Error()
             if errMsg == "cancelled" {
-                e.statusMsg = "AI request cancelled by user"
+                e.setStatusMsg("AI request cancelled by user")
             } else if strings.Contains(errMsg, "cannot connect") {
-                e.statusMsg = "Cannot connect to Ollama. Run: ollama serve"
+                e.setStatusMsg("Cannot connect to Ollama. Run: ollama serve")
             } else if strings.Contains(errMsg, "model") && strings.Contains(errMsg, "not found") {
                 modelName := e.llmClient.model
-                e.statusMsg = fmt.Sprintf("Model '%s' not found. Run: ollama pull %s", modelName, modelName)
+                e.setStatusMsg(fmt.Sprintf("Model '%s' not found. Run: ollama pull %s", modelName, modelName))
             } else if strings.Contains(errMsg, "timeout") {
-                e.statusMsg = "AI request timeout. Try a simpler prompt or check Ollama"
+                e.setStatusMsg("AI request timeout. Try a simpler prompt or check Ollama")
             } else {
                 if len(errMsg) > 70 {
                     errMsg = errMsg[:67] + "..."
                 }
-                e.statusMsg = fmt.Sprintf("AI error: %s", errMsg)
+                e.setStatusMsg(fmt.Sprintf("AI error: %s", errMsg))
             }
-            e.llmResponse = ""
+            e.setLLMResponse("")
             return
         }
 
         if response == "" {
-            e.statusMsg = "AI returned empty response. Try rephrasing your prompt"
-            e.llmResponse = ""
+            e.setStatusMsg("AI returned empty response. Try rephrasing your prompt")
+            e.setLLMResponse("")
             return
         }
 
-        e.llmResponse = response
+        e.setLLMResponse(response)
         
         preview := response
         preview = strings.ReplaceAll(preview, "\n", " ")
@@ -711,28 +847,131 @@ func (e *Editor) askLLMAsync() {
         }
         
         responseLines := strings.Count(response, "\n") + 1
-        e.statusMsg = fmt.Sprintf("AI response ready (%d lines). Preview: %s | Press Ctrl+K to insert", responseLines, preview)
+        e.setStatusMsg(fmt.Sprintf("AI response ready (%d lines). Preview: %s | Press Ctrl+K to insert", responseLines, preview))
     }()
 }
 
-func (e *Editor) ensureCursorValid() {
-    if e.cursor.Row < 0 {
-        e.cursor.Row = 0
+func (e *Editor) askLLMStream() {
+    if e.llmPrompt == "" {
+        e.setStatusMsg("No prompt entered")
+        return
     }
-    maxRow := e.buffer.LineCount() - 1
+
+    e.aiMutex.Lock()
+    if e.aiInProgress {
+        e.aiMutex.Unlock()
+        e.setStatusMsg("AI request already in progress. Press Esc to cancel current request")
+        return
+    }
+    e.aiInProgress = true
+    e.aiMutex.Unlock()
+
+    if !e.llmClient.IsAvailable() {
+        e.aiMutex.Lock()
+        e.aiInProgress = false
+        e.aiMutex.Unlock()
+        e.setStatusMsg("Cannot connect to Ollama. Is it running? Try: ollama serve")
+        return
+    }
+
+    if err := e.llmClient.CheckModel(); err != nil {
+        e.aiMutex.Lock()
+        e.aiInProgress = false
+        e.aiMutex.Unlock()
+        errMsg := err.Error()
+        if len(errMsg) > 80 {
+            errMsg = errMsg[:77] + "..."
+        }
+        e.setStatusMsg(fmt.Sprintf("Model error: %s", errMsg))
+        return
+    }
+
+    e.setLLMResponse("")
+    e.setStatusMsg("Streaming AI response... (Press Esc to cancel)")
+
+    go func() {
+        prompt := e.llmPrompt
+        
+        err := e.llmClient.GenerateStream(prompt, e.aiCancel, func(chunk string) {
+            e.appendLLMResponse(chunk)
+            
+            response := e.getLLMResponse()
+            preview := response
+            preview = strings.ReplaceAll(preview, "\n", " ")
+            preview = strings.ReplaceAll(preview, "\r", "")
+            preview = strings.TrimSpace(preview)
+            
+            if len(preview) > 50 {
+                preview = preview[:47] + "..."
+            }
+            
+            e.setStatusMsg(fmt.Sprintf("Streaming: %s", preview))
+        })
+
+        e.aiMutex.Lock()
+        e.aiInProgress = false
+        e.aiMutex.Unlock()
+
+        if err != nil {
+            errMsg := err.Error()
+            if errMsg == "cancelled" {
+                e.setStatusMsg("AI stream cancelled by user")
+            } else if strings.Contains(errMsg, "cannot connect") {
+                e.setStatusMsg("Cannot connect to Ollama. Run: ollama serve")
+            } else {
+                if len(errMsg) > 70 {
+                    errMsg = errMsg[:67] + "..."
+                }
+                e.setStatusMsg(fmt.Sprintf("Stream error: %s", errMsg))
+            }
+            response := e.getLLMResponse()
+            if response == "" {
+                return
+            }
+        }
+
+        response := e.getLLMResponse()
+        if response == "" {
+            e.setStatusMsg("AI returned empty response. Try rephrasing your prompt")
+            return
+        }
+        
+        responseLines := strings.Count(response, "\n") + 1
+        preview := response
+        preview = strings.ReplaceAll(preview, "\n", " ")
+        preview = strings.ReplaceAll(preview, "\r", "")
+        preview = strings.TrimSpace(preview)
+        
+        if len(preview) > 60 {
+            preview = preview[:57] + "..."
+        }
+        
+        e.setStatusMsg(fmt.Sprintf("Stream complete (%d lines). Preview: %s | Press Ctrl+K to insert", responseLines, preview))
+    }()
+}
+
+func (e *Editor) ensureCursorValid(tab *Tab) {
+    if tab == nil || tab.cursor == nil || tab.buffer == nil {
+        return
+    }
+
+    if tab.cursor.Row < 0 {
+        tab.cursor.Row = 0
+    }
+    maxRow := tab.buffer.LineCount() - 1
     if maxRow < 0 {
         maxRow = 0
     }
-    if e.cursor.Row > maxRow {
-        e.cursor.Row = maxRow
+    if tab.cursor.Row > maxRow {
+        tab.cursor.Row = maxRow
     }
 
-    lineLen := len(e.buffer.GetLine(e.cursor.Row))
-    if e.cursor.Col > lineLen {
-        e.cursor.Col = lineLen
+    lineLen := len(tab.buffer.GetLine(tab.cursor.Row))
+    if tab.cursor.Col > lineLen {
+        tab.cursor.Col = lineLen
     }
-    if e.cursor.Col < 0 {
-        e.cursor.Col = 0
+    if tab.cursor.Col < 0 {
+        tab.cursor.Col = 0
     }
 }
 
@@ -741,35 +980,48 @@ func (e *Editor) render() {
         return
     }
 
+    tab := e.tabManager.GetActiveTab()
+    if tab == nil || tab.buffer == nil || tab.cursor == nil {
+        return
+    }
+
     e.screen.Clear()
 
-    e.ensureCursorValid()
+    e.ensureCursorValid(tab)
 
-    if e.cursor.Row < e.offsetRow {
-        e.offsetRow = e.cursor.Row
+    if tab.cursor.Row < tab.offsetRow {
+        tab.offsetRow = tab.cursor.Row
     }
-    if e.cursor.Row >= e.offsetRow+e.height && e.height > 0 {
-        e.offsetRow = e.cursor.Row - e.height + 1
+    if tab.cursor.Row >= tab.offsetRow+e.height && e.height > 0 {
+        tab.offsetRow = tab.cursor.Row - e.height + 1
     }
-    if e.offsetRow < 0 {
-        e.offsetRow = 0
+    if tab.offsetRow < 0 {
+        tab.offsetRow = 0
     }
+
+    e.renderTabBar()
 
     for y := 0; y < e.height; y++ {
-        row := y + e.offsetRow
-        if row >= e.buffer.LineCount() {
-            e.drawString(0, y, "~", tcell.StyleDefault.Foreground(tcell.ColorBlue))
+        row := y + tab.offsetRow
+        screenY := y + 1
+        
+        if screenY < 0 || screenY >= e.height+3 {
+            continue
+        }
+        
+        if row >= tab.buffer.LineCount() {
+            e.drawString(0, screenY, "~", tcell.StyleDefault.Foreground(tcell.ColorBlue))
             continue
         }
 
-        line := e.buffer.GetLine(row)
-        e.drawString(0, y, line, tcell.StyleDefault)
+        line := tab.buffer.GetLine(row)
+        e.drawString(0, screenY, line, tcell.StyleDefault)
     }
 
     e.renderStatusBar()
 
-    screenY := e.cursor.Row - e.offsetRow
-    screenX := e.cursor.Col
+    screenY := tab.cursor.Row - tab.offsetRow + 1
+    screenX := tab.cursor.Col
 
     if screenX >= e.width {
         screenX = e.width - 1
@@ -777,20 +1029,84 @@ func (e *Editor) render() {
     if screenX < 0 {
         screenX = 0
     }
-    if screenY >= e.height {
-        screenY = e.height - 1
+    if screenY >= e.height+1 {
+        screenY = e.height
     }
-    if screenY < 0 {
-        screenY = 0
+    if screenY < 1 {
+        screenY = 1
     }
 
     e.screen.ShowCursor(screenX, screenY)
     e.screen.Show()
 }
 
+func (e *Editor) renderTabBar() {
+    y := 0
+    
+    style := tcell.StyleDefault.
+        Background(tcell.ColorDarkBlue).
+        Foreground(tcell.ColorWhite)
+    
+    activeStyle := tcell.StyleDefault.
+        Background(tcell.ColorBlue).
+        Foreground(tcell.ColorWhite).
+        Bold(true)
+
+    for x := 0; x < e.width; x++ {
+        if y >= 0 && y < e.height+3 {
+            e.screen.SetContent(x, y, ' ', nil, style)
+        }
+    }
+
+    x := 0
+    tabCount := e.tabManager.GetTabCount()
+    
+    for i := 0; i < tabCount && x < e.width; i++ {
+        tabName := e.tabManager.GetTabName(i)
+        isActive := e.tabManager.IsActiveTab(i)
+        
+        tabLabel := fmt.Sprintf(" %d:%s ", i+1, tabName)
+        
+        if len(tabLabel) > 20 {
+            tabLabel = tabLabel[:17] + ".. "
+        }
+        
+        tabStyle := style
+        if isActive {
+            tabStyle = activeStyle
+        }
+        
+        if x+len(tabLabel) > e.width {
+            break
+        }
+        
+        for _, r := range tabLabel {
+            if x >= e.width {
+                break
+            }
+            if y >= 0 && y < e.height+3 {
+                e.screen.SetContent(x, y, r, nil, tabStyle)
+            }
+            x++
+        }
+        
+        if i < tabCount-1 && x < e.width {
+            if y >= 0 && y < e.height+3 {
+                e.screen.SetContent(x, y, '│', nil, style)
+            }
+            x++
+        }
+    }
+}
+
 func (e *Editor) renderStatusBar() {
-    y := e.height
-    if y < 0 {
+    tab := e.tabManager.GetActiveTab()
+    if tab == nil || tab.buffer == nil || tab.cursor == nil {
+        return
+    }
+
+    y := e.height + 1
+    if y < 0 || y >= e.height+3 {
         return
     }
 
@@ -809,25 +1125,25 @@ func (e *Editor) renderStatusBar() {
     }
 
     for x := 0; x < e.width; x++ {
-        if y >= 0 && y < e.height+2 {
+        if y >= 0 && y < e.height+3 {
             e.screen.SetContent(x, y, ' ', nil, style)
         }
-        if y+1 >= 0 && y+1 < e.height+2 {
+        if y+1 >= 0 && y+1 < e.height+3 {
             e.screen.SetContent(x, y+1, ' ', nil, style)
         }
     }
 
-    statusMsg := e.statusMsg
+    statusMsg := e.getStatusMsg()
     if len(statusMsg) > e.width && e.width > 3 {
         statusMsg = statusMsg[:e.width-3] + "..."
     }
     e.drawString(0, y, statusMsg, style)
 
     modMark := ""
-    if e.buffer.modified {
+    if tab.buffer.modified {
         modMark = " [+]"
     }
-    filename := e.buffer.filename
+    filename := tab.buffer.filename
     if filename == "" {
         filename = "[No Name]"
     } else {
@@ -837,20 +1153,21 @@ func (e *Editor) renderStatusBar() {
         }
     }
 
-    info := fmt.Sprintf("%s%s | Ln %d/%d | Col %d",
-        filename, modMark, e.cursor.Row+1, e.buffer.LineCount(), e.cursor.Col+1)
+    info := fmt.Sprintf("%s%s | Ln %d/%d | Col %d | Tab %d/%d",
+        filename, modMark, tab.cursor.Row+1, tab.buffer.LineCount(), tab.cursor.Col+1,
+        e.tabManager.activeTab+1, e.tabManager.GetTabCount())
 
     if len(info) > e.width && e.width > 0 {
         info = info[:e.width]
     }
 
-    if y+1 >= 0 && y+1 < e.height+2 {
+    if y+1 >= 0 && y+1 < e.height+3 {
         e.drawString(0, y+1, info, style)
     }
 }
 
 func (e *Editor) drawString(x, y int, s string, style tcell.Style) {
-    if e.screen == nil || y < 0 || y >= e.height+2 || x < 0 {
+    if e.screen == nil || y < 0 || y >= e.height+3 || x < 0 {
         return
     }
 
@@ -866,6 +1183,7 @@ func (e *Editor) drawString(x, y int, s string, style tcell.Style) {
 func main() {
     ollamaURL := flag.String("ollama", "http://localhost:11434", "Ollama API URL")
     model := flag.String("model", "llama2", "LLM model to use")
+    streamEnabled := flag.Bool("stream", false, "Enable streaming AI responses")
     showVersion := flag.Bool("version", false, "Show version")
     showHelp := flag.Bool("help", false, "Show help")
 
@@ -873,6 +1191,7 @@ func main() {
 
     if *showVersion {
         fmt.Printf("GoEdit v%s\n", version)
+        fmt.Println("Copyright © Prof. Dr. Michael Stal, 2025")
         os.Exit(0)
     }
 
@@ -881,16 +1200,17 @@ func main() {
         os.Exit(0)
     }
 
-    var filename string
-    if flag.NArg() > 0 {
-        filename = flag.Arg(0)
+    var filenames []string
+    for i := 0; i < flag.NArg(); i++ {
+        filename := flag.Arg(i)
         absPath, err := filepath.Abs(filename)
         if err == nil {
             filename = absPath
         }
+        filenames = append(filenames, filename)
     }
 
-    ed, err := NewEditor(filename, *ollamaURL, *model)
+    ed, err := NewEditor(filenames, *ollamaURL, *model, *streamEnabled)
     if err != nil {
         log.Fatalf("Failed to create editor: %v", err)
     }
@@ -901,29 +1221,43 @@ func main() {
 }
 
 func printHelp() {
-    fmt.Println("GoEdit - A minimal yet powerful terminal text editor")
+    fmt.Println("GoEdit v2.0 - A powerful terminal text editor with AI assistance")
+    fmt.Println("Copyright © Prof. Dr. Michael Stal, 2025")
     fmt.Println("\nUsage:")
-    fmt.Println("  goedit [options] [filename]")
+    fmt.Println("  goedit [options] [file1] [file2] ...")
     fmt.Println("\nOptions:")
     fmt.Println("  -ollama string    Ollama API URL (default: http://localhost:11434)")
     fmt.Println("  -model string     LLM model to use (default: llama2)")
+    fmt.Println("  -stream           Enable streaming AI responses")
     fmt.Println("  -version          Show version")
     fmt.Println("  -help             Show this help")
     fmt.Println("\nKeyboard Shortcuts:")
-    fmt.Println("  Ctrl+S           Save file")
-    fmt.Println("  Ctrl+Q           Quit")
-    fmt.Println("  Ctrl+F           Find text")
-    fmt.Println("  Ctrl+G           Go to line")
-    fmt.Println("  Ctrl+A           Select all")
-    fmt.Println("  Ctrl+C           Copy line")
-    fmt.Println("  Ctrl+X           Cut line")
-    fmt.Println("  Ctrl+V           Paste")
-    fmt.Println("  Ctrl+Z           Undo")
-    fmt.Println("  Ctrl+Y           Redo")
-    fmt.Println("  Ctrl+L           Ask LLM (AI Assistant)")
-    fmt.Println("  Ctrl+K           Insert LLM response at cursor")
-    fmt.Println("  Esc              Cancel AI request")
-    fmt.Println("  Tab              Insert 4 spaces")
-    fmt.Println("  Home/End         Line start/end")
-    fmt.Println("  Page Up/Down     Scroll page")
-}
+    fmt.Println("  File Operations:")
+    fmt.Println("    Ctrl+S         Save current file")
+    fmt.Println("    Ctrl+Q         Quit editor")
+    fmt.Println("    Ctrl+T         New tab")
+    fmt.Println("    Ctrl+W         Close current tab")
+    fmt.Println("    Tab            Next tab")
+    fmt.Println("    Shift+Tab      Previous tab")
+    fmt.Println("\n  Editing:")
+    fmt.Println("    Ctrl+A         Copy all text to system clipboard")
+    fmt.Println("    Ctrl+C         Copy current line to system clipboard")
+    fmt.Println("    Ctrl+X         Cut current line to system clipboard")
+    fmt.Println("    Ctrl+V         Paste from system clipboard")
+    fmt.Println("    Ctrl+Z         Undo")
+    fmt.Println("    Ctrl+Y         Redo")
+    fmt.Println("\n  Navigation:")
+    fmt.Println("    Ctrl+F         Find text")
+    fmt.Println("    Ctrl+G         Go to line")
+    fmt.Println("    Home/End       Line start/end")
+    fmt.Println("    Ctrl+Home/End  File start/end")
+    fmt.Println("    Page Up/Down   Scroll page")
+    fmt.Println("\n  AI Assistant:")
+    fmt.Println("    Ctrl+L         Ask AI (with optional streaming)")
+    fmt.Println("    Ctrl+K         Insert AI response at cursor")
+    fmt.Println("    Esc            Cancel AI request")
+    fmt.Println("\nExamples:")
+    fmt.Println("  goedit file.txt")
+    fmt.Println("  goedit file1.go file2.go file3.go")
+    fmt.Println("  goedit -stream -model codellama main.go")
+}			
